@@ -1,6 +1,7 @@
 import { useEffect, useRef, useState, useCallback } from 'react'
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
+import Dashboard from './Dashboard.jsx'
 
 const DEFAULT_PARAMS = { grid_x: 1, grid_y: 1, height_u: 3, wall: 1.2 }
 const DEFAULT_VASE = { base_r: 20, amplitude: 8, frequency: 4, height: 80 }
@@ -209,7 +210,13 @@ function App() {
 
   return (
     <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden' }}>
-      <canvas ref={canvasRef} style={{ position: 'absolute', left: '220px', right: '260px', top: 0, bottom: 0, width: 'calc(100vw - 480px)', height: '100vh', display: 'block' }} />
+      {/* Farm Dashboard overlay */}
+      {mode === 'farm' && (
+        <div style={{ position: 'absolute', left: '220px', right: 0, top: 0, bottom: 0, zIndex: 5, overflowY: 'auto' }}>
+          <Dashboard />
+        </div>
+      )}
+      <canvas ref={canvasRef} style={{ position: 'absolute', left: '220px', right: '260px', top: 0, bottom: 0, width: 'calc(100vw - 480px)', height: '100vh', display: mode === 'farm' ? 'none' : 'block' }} />
 
       <div style={{
         position: 'absolute', top: 0, left: 0, height: '100%',
@@ -225,17 +232,17 @@ function App() {
           <span style={{ fontSize: '10px', color: '#666', fontFamily: "'JetBrains Mono', monospace" }}>{status}</span>
         </div>
 
-        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px' }}>
-          {['gridfinity', 'vase'].map(m => (
+        <div style={{ display: 'flex', gap: '4px', marginBottom: '16px', flexWrap: 'wrap' }}>
+          {['gridfinity', 'vase', 'farm'].map(m => (
             <button key={m} onClick={() => handleModeSwitch(m)} style={{
               flex: 1, padding: '7px 4px', fontSize: '10px', cursor: 'pointer',
-              background: mode === m ? '#00ff88' : 'transparent',
-              color: mode === m ? '#000' : '#555',
-              border: mode === m ? 'none' : '1px solid #222',
+              background: mode === m ? (m === 'farm' ? '#00aaff' : '#00ff88') : 'transparent',
+              color: mode === m ? '#000' : (m === 'farm' ? '#00aaff' : '#555'),
+              border: mode === m ? 'none' : `1px solid ${m === 'farm' ? '#00aaff33' : '#222'}`,
               fontFamily: "'Inter', sans-serif", fontWeight: 500,
               letterSpacing: '0.05em', textTransform: 'uppercase',
               transition: 'all 0.15s'
-            }}>{m}</button>
+            }}>{m === 'farm' ? '⚙ farm' : m}</button>
           ))}
         </div>
 
@@ -291,7 +298,7 @@ function App() {
         </>}
       </div>
 
-      {mode === 'gridfinity' && (
+      {mode === 'gridfinity' && mode !== 'farm' && (
         <div style={{
           position: 'absolute', bottom: 0, left: '220px', right: '260px',
           background: 'rgba(0,0,0,0.75)', padding: '12px 20px',
@@ -310,8 +317,8 @@ function App() {
         </div>
       )}
 
-      {/* Chat Panel */}
-      <div style={{ position: 'absolute', top: 0, right: 0, width: '260px', height: '100%', background: 'rgba(0,0,0,0.80)', display: 'flex', flexDirection: 'column', fontFamily: 'monospace', color: 'white', zIndex: 10 }}>
+      {/* Chat Panel — hidden in farm mode */}
+      <div style={{ position: 'absolute', top: 0, right: 0, width: '260px', height: '100%', background: 'rgba(0,0,0,0.80)', display: mode === 'farm' ? 'none' : 'flex', flexDirection: 'column', fontFamily: 'monospace', color: 'white', zIndex: 10 }}>
         <div style={{ padding: '16px', borderBottom: '1px solid rgba(255,255,255,0.06)' }}>
           <div style={{ fontSize: '10px', fontWeight: 600, color: '#00ff88', letterSpacing: '0.15em' }}>AI ASSISTANT</div>
           <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>natural language → geometry</div>

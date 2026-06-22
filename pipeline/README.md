@@ -28,7 +28,11 @@ Set these before starting n8n:
 export MAKER_AI_DIR=/path/to/maker-ai-stage-a        # where spec/ lives
 export ORCA_SLICER_PATH=/path/to/OrcaSlicer.AppImage
 export ORCA_PROFILES_DIR=/path/to/orca-profiles       # squashfs-root/resources/profiles
+export MAKER_AI_API_URL=http://localhost:8000          # FastAPI backend URL
 ```
+
+`MAKER_AI_API_URL` is used by the `POST to Dashboard API` node to push slice results
+to the dashboard in real-time after every farm intake validation.
 
 ## Running build_spec.py
 

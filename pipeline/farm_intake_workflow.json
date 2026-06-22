@@ -101,6 +101,72 @@
       ],
       "id": "86efc6ce-57b4-42fd-8d19-cef6ddd689ec",
       "name": "Execute Command2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MAKER_AI_API_URL || \"http://localhost:8000\" }}/api/v1/farm/feedback",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "spec_id",
+              "value": "={{ $json.spec_id }}"
+            },
+            {
+              "name": "spec_version",
+              "value": "={{ $json.spec_version }}"
+            },
+            {
+              "name": "material",
+              "value": "={{ $json.material }}"
+            },
+            {
+              "name": "qty",
+              "value": "={{ $json.qty }}"
+            },
+            {
+              "name": "machine_class",
+              "value": "={{ $json.machine_class }}"
+            },
+            {
+              "name": "actual_time_seconds",
+              "value": "={{ $json.actual_time_seconds }}"
+            },
+            {
+              "name": "actual_weight_grams",
+              "value": "={{ $json.actual_weight_grams }}"
+            },
+            {
+              "name": "claimed_time_seconds",
+              "value": "={{ $json.claimed_time_seconds }}"
+            },
+            {
+              "name": "claimed_weight_grams",
+              "value": "={{ $json.claimed_weight_grams }}"
+            },
+            {
+              "name": "flagged_for_review",
+              "value": "={{ $json.flagged_for_review }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        460
+      ],
+      "id": "a1b2c3d4-0000-0000-0000-111122223333",
+      "name": "POST to Dashboard API"
     }
   ],
   "pinData": {},
@@ -159,6 +225,11 @@
           },
           {
             "node": "Execute Command2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "POST to Dashboard API",
             "type": "main",
             "index": 0
           }

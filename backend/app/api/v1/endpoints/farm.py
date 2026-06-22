@@ -57,3 +57,13 @@ async def printer_action(printer_id: str, action: str):
         return {"error": "unknown action"}
     farm_store.set_printer_status(printer_id, new_status)
     return {"printer_id": printer_id, "status": new_status}
+
+
+@router.get("/queue")
+async def farm_queue():
+    return farm_store.get_queue()
+
+
+@router.get("/inventory")
+async def farm_inventory():
+    return farm_store.get_inventory()

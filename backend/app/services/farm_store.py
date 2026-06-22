@@ -16,6 +16,7 @@ _FEEDBACK_PATH = Path(os.environ.get("MAKER_AI_DIR", "/tmp/maker-ai")) / "spec" 
 _orders: list[dict] = []
 _feedback: list[dict] = []
 _printers: list[dict] = []
+_inventory: list[dict] = []
 
 
 def _ensure_dir():
@@ -88,3 +89,17 @@ def set_printer_status(printer_id: str, status: str):
             p["status"] = status
             return True
     return False
+
+
+def get_queue() -> list[dict]:
+    return [o for o in _orders if o.get("status") not in ("DISPATCH", "LOGGED", "CANCELLED")]
+
+
+def get_inventory() -> list[dict]:
+    return _inventory
+
+
+def upsert_spool(spool: dict):
+    global _inventory
+    _inventory = [s for s in _inventory if s["id"] != spool["id"]]
+    _inventory.append(spool)

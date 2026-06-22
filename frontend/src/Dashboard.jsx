@@ -540,20 +540,12 @@ export default function Dashboard() {
     setSlicing(true); setSliceStatus(null)
     const base = apiUrlRef.current
     try {
-      let res
-      if (slicerFile) {
-        const fd = new FormData()
-        fd.append('file', slicerFile)
-        fd.append('material', slicerMaterial)
-        fd.append('machine', slicerMachine)
-        Object.entries(slicerSettings).forEach(([k, v]) => fd.append(k, String(v)))
-        res = await fetch(`${base}/api/v1/slicer/slice`, { method: 'POST', body: fd })
-      } else {
-        res = await fetch(`${base}/api/v1/slicer/slice`, {
-          method: 'POST', headers: { 'Content-Type': 'application/json' },
-          body: JSON.stringify({ material: slicerMaterial, machine: slicerMachine, ...slicerSettings })
-        })
-      }
+      const fd = new FormData()
+      if (slicerFile) fd.append('file', slicerFile)
+      fd.append('material', slicerMaterial)
+      fd.append('machine', slicerMachine)
+      Object.entries(slicerSettings).forEach(([k, v]) => fd.append(k, String(v)))
+      const res = await fetch(`${base}/api/v1/slicer/slice`, { method: 'POST', body: fd })
       setSliceStatus(await res.json())
     } catch (e) {
       setSliceStatus({ error: e.message === 'Failed to fetch' ? 'Backend unreachable — paste your Railway URL in the API field above and try again.' : e.message })

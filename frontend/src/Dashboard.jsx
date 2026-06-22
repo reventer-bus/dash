@@ -2,92 +2,162 @@ import { useState, useEffect } from 'react'
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
-const S = {
-  card: { background: 'rgba(255,255,255,0.04)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: '8px', padding: '12px 14px' },
-  label: { fontSize: '9px', color: '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: '4px' },
-  val: { fontSize: '22px', fontWeight: 700, fontFamily: "'JetBrains Mono', monospace", color: '#fff' },
-  tag: (color) => ({ display: 'inline-block', fontSize: '9px', fontWeight: 600, padding: '2px 7px', borderRadius: '4px', background: color + '22', color, border: `1px solid ${color}44`, letterSpacing: '0.08em' }),
-  row: { display: 'flex', alignItems: 'center', justifyContent: 'space-between', padding: '8px 0', borderBottom: '1px solid rgba(255,255,255,0.04)' },
+const STATUS_COLOR = {
+  printing: '#00ff88', idle: '#555', paused: '#ff9800',
+  error: '#ff4444', offline: '#2a2a2a', slicing: '#00aaff'
 }
 
-const STATUS_COLOR = { printing: '#00ff88', idle: '#555', paused: '#ff9800', error: '#ff4444', offline: '#333', slicing: '#00aaff' }
-const ORDER_COLOR = { NEW: '#555', AI_PREP: '#00aaff', PRINTING: '#00ff88', POST_PROCESS: '#ff9800', QUALITY_CHECK: '#aa44ff', PACK: '#ff9800', DISPATCH: '#00ff88' }
+const ORDER_STAGES = ['NEW', 'AI_PREP', 'PRINTING', 'POST_PROCESS', 'QUALITY_CHECK', 'PACK', 'DISPATCH']
+const ORDER_COLOR = {
+  NEW: '#444', AI_PREP: '#00aaff', PRINTING: '#00ff88',
+  POST_PROCESS: '#ff9800', QUALITY_CHECK: '#aa44ff', PACK: '#ff9800', DISPATCH: '#00ff88'
+}
 
-function StatCard({ label, value, color }) {
+function StatCard({ label, value, sub, color = '#fff', icon }) {
   return (
-    <div style={S.card}>
-      <div style={S.label}>{label}</div>
-      <div style={{ ...S.val, color: color || '#fff' }}>{value}</div>
+    <div style={{
+      background: 'rgba(255,255,255,0.03)', border: '1px solid rgba(255,255,255,0.07)',
+      borderRadius: '10px', padding: '16px', position: 'relative', overflow: 'hidden'
+    }}>
+      <div style={{ position: 'absolute', top: 12, right: 14, fontSize: 20, opacity: 0.15 }}>{icon}</div>
+      <div style={{ fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 6 }}>{label}</div>
+      <div style={{ fontSize: 28, fontWeight: 700, fontFamily: 'monospace', color, lineHeight: 1 }}>{value ?? '—'}</div>
+      {sub && <div style={{ fontSize: 10, color: '#444', marginTop: 6 }}>{sub}</div>}
     </div>
   )
 }
 
-function SliceResult({ entry }) {
-  const flagged = entry.flagged_for_review
+function PulsingDot({ color }) {
   return (
-    <div style={{ ...S.card, borderColor: flagged ? '#ff980044' : 'rgba(255,255,255,0.07)', marginBottom: '8px' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '6px' }}>
-        <span style={{ fontSize: '11px', color: '#aaa', fontFamily: 'monospace' }}>{entry.spec_id}</span>
-        <span style={S.tag(flagged ? '#ff9800' : '#00ff88')}>{flagged ? 'FLAGGED' : 'PASS'}</span>
+    <span style={{ position: 'relative', display: 'inline-block', width: 8, height: 8 }}>
+      <span style={{
+        position: 'absolute', inset: 0, borderRadius: '50%', background: color,
+        animation: color === '#00ff88' ? 'pulse 2s infinite' : 'none'
+      }} />
+    </span>
+  )
+}
+
+function PrinterCard({ printer, onAction }) {
+  const color = STATUS_COLOR[printer.status] || '#555'
+  const pct = printer.progress_pct ?? 0
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.02)', border: `1px solid ${color}22`,
+      borderRadius: 8, padding: '12px 14px', marginBottom: 8
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <PulsingDot color={color} />
+          <span style={{ fontSize: 12, color: '#ddd', fontWeight: 600 }}>{printer.name}</span>
+        </div>
+        <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+          <span style={{
+            fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 4,
+            background: color + '22', color, border: `1px solid ${color}44`, letterSpacing: '0.08em'
+          }}>{printer.status.toUpperCase()}</span>
+          {printer.status === 'printing' && (
+            <button onClick={() => onAction(printer.id, 'pause')} style={{
+              fontSize: 9, padding: '2px 8px', background: 'transparent',
+              border: '1px solid #333', color: '#888', cursor: 'pointer', borderRadius: 3
+            }}>PAUSE</button>
+          )}
+          {printer.status === 'paused' && (
+            <button onClick={() => onAction(printer.id, 'resume')} style={{
+              fontSize: 9, padding: '2px 8px', background: '#00ff8822',
+              border: '1px solid #00ff8844', color: '#00ff88', cursor: 'pointer', borderRadius: 3
+            }}>RESUME</button>
+          )}
+        </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '6px' }}>
+      {printer.current_job && (
+        <div style={{ fontSize: 10, color: '#555', fontFamily: 'monospace', marginBottom: 8 }}>
+          {printer.current_job}
+        </div>
+      )}
+      {printer.status === 'printing' && (
+        <div>
+          <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
+            <span style={{ fontSize: 9, color: '#444' }}>PROGRESS</span>
+            <span style={{ fontSize: 9, color: color, fontFamily: 'monospace' }}>{pct}%</span>
+          </div>
+          <div style={{ height: 3, background: '#1a1a1a', borderRadius: 2 }}>
+            <div style={{ width: `${pct}%`, height: '100%', background: color, borderRadius: 2, transition: 'width 0.5s' }} />
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
+function SliceCard({ entry }) {
+  const flagged = entry.flagged_for_review
+  const timeDiff = entry.actual_time_seconds && entry.claimed_time_seconds
+    ? Math.round(((entry.actual_time_seconds - entry.claimed_time_seconds) / entry.claimed_time_seconds) * 100)
+    : null
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.02)',
+      border: `1px solid ${flagged ? '#ff980033' : 'rgba(255,255,255,0.06)'}`,
+      borderRadius: 8, padding: '12px 14px', marginBottom: 8
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+        <span style={{ fontSize: 11, color: '#aaa', fontFamily: 'monospace' }}>{entry.spec_id || 'slice'}</span>
+        <span style={{
+          fontSize: 9, fontWeight: 700, padding: '2px 8px', borderRadius: 4, letterSpacing: '0.08em',
+          background: (flagged ? '#ff9800' : '#00ff88') + '22',
+          color: flagged ? '#ff9800' : '#00ff88',
+          border: `1px solid ${(flagged ? '#ff9800' : '#00ff88')}44`
+        }}>{flagged ? '⚠ FLAGGED' : '✓ PASS'}</span>
+      </div>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: '8px' }}>
         {[
-          ['Material', entry.material],
-          ['Machine', entry.machine_class],
-          ['Actual Time', entry.actual_time_seconds != null ? `${Math.round(entry.actual_time_seconds / 60)}min` : '—'],
-          ['Actual Weight', entry.actual_weight_grams != null ? `${entry.actual_weight_grams}g` : '—'],
-          ['Claimed Time', entry.claimed_time_seconds != null ? `${Math.round(entry.claimed_time_seconds / 60)}min` : '—'],
-          ['Claimed Wt', entry.claimed_weight_grams != null ? `${entry.claimed_weight_grams}g` : '—'],
+          ['Material', entry.material || '—'],
+          ['Machine', entry.machine_class || '—'],
+          ['Time', entry.actual_time_seconds != null ? `${Math.round(entry.actual_time_seconds / 60)}min` : '—'],
+          ['Weight', entry.actual_weight_grams != null ? `${entry.actual_weight_grams}g` : '—'],
+          ['Δ Time', timeDiff != null ? `${timeDiff > 0 ? '+' : ''}${timeDiff}%` : '—'],
         ].map(([k, v]) => (
           <div key={k}>
-            <div style={{ ...S.label, marginBottom: '1px' }}>{k}</div>
-            <div style={{ fontSize: '12px', color: '#ccc', fontFamily: 'monospace' }}>{v}</div>
+            <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
+            <div style={{ fontSize: 11, color: '#bbb', fontFamily: 'monospace', marginTop: 2 }}>{v}</div>
           </div>
         ))}
       </div>
-      <div style={{ marginTop: '6px', fontSize: '9px', color: '#333' }}>{new Date(entry.received_at).toLocaleTimeString()}</div>
-    </div>
-  )
-}
-
-function PrinterRow({ printer, onAction }) {
-  const color = STATUS_COLOR[printer.status] || '#555'
-  return (
-    <div style={S.row}>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        <span style={{ width: '7px', height: '7px', borderRadius: '50%', background: color, flexShrink: 0 }} />
-        <div>
-          <div style={{ fontSize: '11px', color: '#ddd' }}>{printer.name}</div>
-          {printer.current_job && <div style={{ fontSize: '10px', color: '#555', fontFamily: 'monospace' }}>{printer.current_job}</div>}
-        </div>
-      </div>
-      <div style={{ display: 'flex', alignItems: 'center', gap: '8px' }}>
-        {printer.progress_pct != null && (
-          <div style={{ width: '60px', height: '4px', background: '#222', borderRadius: '2px' }}>
-            <div style={{ width: `${printer.progress_pct}%`, height: '100%', background: color, borderRadius: '2px' }} />
-          </div>
-        )}
-        <span style={S.tag(color)}>{printer.status.toUpperCase()}</span>
-        {printer.status === 'printing' && (
-          <button onClick={() => onAction(printer.id, 'pause')}
-            style={{ fontSize: '9px', padding: '2px 8px', background: 'transparent', border: '1px solid #333', color: '#666', cursor: 'pointer' }}>
-            PAUSE
-          </button>
-        )}
+      <div style={{ marginTop: 8, fontSize: 9, color: '#2a2a2a' }}>
+        {new Date(entry.received_at).toLocaleString()}
       </div>
     </div>
   )
 }
 
 function OrderRow({ order }) {
-  const color = ORDER_COLOR[order.status] || '#555'
+  const stageIdx = ORDER_STAGES.indexOf(order.status)
+  const color = ORDER_COLOR[order.status] || '#444'
   return (
-    <div style={S.row}>
-      <div>
-        <div style={{ fontSize: '11px', color: '#ddd', fontFamily: 'monospace' }}>{order.spec_id || order.id}</div>
-        <div style={{ fontSize: '10px', color: '#444' }}>{order.material} · qty {order.qty}</div>
+    <div style={{
+      padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.04)'
+    }}>
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
+        <div>
+          <span style={{ fontSize: 11, color: '#ddd', fontFamily: 'monospace' }}>{order.spec_id || order.id}</span>
+          <span style={{ fontSize: 10, color: '#444', marginLeft: 8 }}>{order.material} · qty {order.qty}</span>
+        </div>
+        <span style={{
+          fontSize: 9, fontWeight: 700, padding: '2px 7px', borderRadius: 4, letterSpacing: '0.06em',
+          background: color + '22', color, border: `1px solid ${color}44`
+        }}>{order.status || 'LOGGED'}</span>
       </div>
-      <span style={S.tag(color)}>{order.status || 'LOGGED'}</span>
+      {stageIdx >= 0 && (
+        <div style={{ display: 'flex', gap: 3 }}>
+          {ORDER_STAGES.map((s, i) => (
+            <div key={s} style={{
+              flex: 1, height: 2, borderRadius: 1,
+              background: i <= stageIdx ? (ORDER_COLOR[ORDER_STAGES[i]] || '#555') : '#1a1a1a'
+            }} />
+          ))}
+        </div>
+      )}
     </div>
   )
 }
@@ -98,6 +168,7 @@ export default function Dashboard() {
   const [slicing, setSlicing] = useState(false)
   const [lastPoll, setLastPoll] = useState(null)
   const [error, setError] = useState(null)
+  const [tab, setTab] = useState('overview')
 
   const poll = async () => {
     try {
@@ -108,7 +179,7 @@ export default function Dashboard() {
       setLastPoll(new Date())
       setError(null)
     } catch (e) {
-      setError('Backend offline — ' + e.message)
+      setError(e.message)
     }
   }
 
@@ -124,12 +195,12 @@ export default function Dashboard() {
     setSlicing(true)
     setSliceStatus(null)
     try {
-      const res = await fetch(`${API}/api/v1/slicer/slice`, { method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify({ stl_path: null, material: 'PLA', machine: 'BambuA1' }) })
-      const data = await res.json()
-      setSliceStatus(data)
-    } catch (e) {
-      setSliceStatus({ error: e.message })
-    }
+      const res = await fetch(`${API}/api/v1/slicer/slice`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ stl_path: null, material: 'PLA', machine: 'BambuA1' })
+      })
+      setSliceStatus(await res.json())
+    } catch (e) { setSliceStatus({ error: e.message }) }
     setSlicing(false)
   }
 
@@ -140,97 +211,164 @@ export default function Dashboard() {
 
   const stats = farm.stats || {}
   const printers = farm.printers || []
-  const orders = farm.orders || []
-  const feedback = farm.feedback || []
+  const orders = (farm.orders || []).slice().reverse()
+  const feedback = (farm.feedback || []).slice().reverse()
+  const printing = printers.filter(p => p.status === 'printing').length
+  const idle = printers.filter(p => p.status === 'idle').length
+
+  const TABS = ['overview', 'printers', 'orders', 'slicer']
 
   return (
-    <div style={{ height: '100vh', overflowY: 'auto', padding: '20px', fontFamily: "'Inter', sans-serif", color: 'white', background: '#0a0a0a' }}>
+    <div style={{ minHeight: '100vh', padding: '24px 28px', fontFamily: "'Inter', system-ui, sans-serif", color: 'white', background: '#080808' }}>
+      <style>{`
+        @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.4;transform:scale(1.4)} }
+        * { box-sizing: border-box }
+        ::-webkit-scrollbar { width: 4px } ::-webkit-scrollbar-track { background: transparent }
+        ::-webkit-scrollbar-thumb { background: #222; border-radius: 2px }
+      `}</style>
 
       {/* Header */}
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: '20px' }}>
+      <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 28 }}>
         <div>
-          <div style={{ fontSize: '11px', fontWeight: 700, color: '#00ff88', letterSpacing: '0.15em' }}>FARM DASHBOARD</div>
-          <div style={{ fontSize: '10px', color: '#333', marginTop: '2px' }}>fofus.in · live</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
+            <span style={{ fontSize: 18, fontWeight: 800, letterSpacing: '-0.02em', color: '#00ff88' }}>printdash</span>
+            <span style={{ fontSize: 11, color: '#333', fontWeight: 400 }}>by fofus.in</span>
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+            <PulsingDot color={error ? '#ff4444' : '#00ff88'} />
+            <span style={{ fontSize: 10, color: error ? '#ff4444' : '#444' }}>
+              {error ? `offline — ${error}` : lastPoll ? `live · ${lastPoll.toLocaleTimeString()}` : 'connecting...'}
+            </span>
+          </div>
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
-          {error && <span style={{ fontSize: '10px', color: '#ff4444' }}>{error}</span>}
-          {lastPoll && !error && <span style={{ fontSize: '10px', color: '#333' }}>updated {lastPoll.toLocaleTimeString()}</span>}
-          <button onClick={poll} style={{ fontSize: '10px', padding: '4px 10px', background: 'transparent', border: '1px solid #222', color: '#555', cursor: 'pointer' }}>REFRESH</button>
+        <div style={{ display: 'flex', gap: 6 }}>
+          {TABS.map(t => (
+            <button key={t} onClick={() => setTab(t)} style={{
+              padding: '6px 14px', fontSize: 10, fontWeight: 600, cursor: 'pointer',
+              letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 5,
+              background: tab === t ? '#00ff8815' : 'transparent',
+              color: tab === t ? '#00ff88' : '#333',
+              border: tab === t ? '1px solid #00ff8833' : '1px solid transparent',
+              transition: 'all 0.15s'
+            }}>{t}</button>
+          ))}
+          <button onClick={poll} style={{
+            padding: '6px 12px', fontSize: 10, cursor: 'pointer', borderRadius: 5,
+            background: 'transparent', border: '1px solid #1a1a1a', color: '#333'
+          }}>↻</button>
         </div>
       </div>
 
-      {/* Stats */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4, 1fr)', gap: '10px', marginBottom: '20px' }}>
-        <StatCard label="Active Orders" value={stats.active_orders ?? '—'} color="#00ff88" />
-        <StatCard label="Printing" value={stats.printing ?? '—'} color="#00aaff" />
-        <StatCard label="Flagged" value={stats.flagged ?? '—'} color="#ff9800" />
-        <StatCard label="Completed" value={stats.completed ?? '—'} />
+      {/* Stats row — always visible */}
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 12, marginBottom: 24 }}>
+        <StatCard icon="📦" label="Active Orders" value={stats.active_orders} color="#00ff88" sub={`${orders.length} total logged`} />
+        <StatCard icon="🖨" label="Printing" value={printing} color="#00aaff" sub={`${idle} idle · ${printers.length} total`} />
+        <StatCard icon="⚠" label="Flagged" value={stats.flagged ?? feedback.filter(f => f.flagged_for_review).length} color="#ff9800" sub="needs review" />
+        <StatCard icon="✓" label="Completed" value={stats.completed} color="#aaa" sub="this session" />
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: '16px' }}>
+      {/* OVERVIEW TAB */}
+      {tab === 'overview' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
+          <div>
+            <SectionHead>Printer Farm</SectionHead>
+            {printers.length === 0
+              ? <EmptyState>No printers registered yet</EmptyState>
+              : printers.map(p => <PrinterCard key={p.id} printer={p} onAction={printerAction} />)
+            }
+          </div>
+          <div>
+            <SectionHead>Recent Slice Results</SectionHead>
+            {feedback.length === 0
+              ? <EmptyState>Send a design to farm to see results</EmptyState>
+              : feedback.slice(0, 5).map((e, i) => <SliceCard key={i} entry={e} />)
+            }
+          </div>
+        </div>
+      )}
 
-        {/* OrcaSlicer */}
+      {/* PRINTERS TAB */}
+      {tab === 'printers' && (
+        <div style={{ maxWidth: 600 }}>
+          <SectionHead>All Printers</SectionHead>
+          {printers.length === 0
+            ? <EmptyState>No printers registered. POST to /api/v1/farm/printer to add one.</EmptyState>
+            : printers.map(p => <PrinterCard key={p.id} printer={p} onAction={printerAction} />)
+          }
+        </div>
+      )}
+
+      {/* ORDERS TAB */}
+      {tab === 'orders' && (
         <div>
-          <div style={{ ...S.label, marginBottom: '10px' }}>OrcaSlicer — Direct Slice</div>
-          <div style={S.card}>
-            <div style={{ fontSize: '10px', color: '#555', marginBottom: '10px' }}>
-              Slice last design with Bambu A1 · PLA · 0.20mm profile
+          <SectionHead>{orders.length} Orders</SectionHead>
+          <div style={{
+            background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.06)',
+            borderRadius: 10, padding: '0 16px'
+          }}>
+            {orders.length === 0
+              ? <div style={{ padding: '20px 0', textAlign: 'center', fontSize: 12, color: '#2a2a2a' }}>No orders yet</div>
+              : orders.map((o, i) => <OrderRow key={i} order={o} />)
+            }
+          </div>
+        </div>
+      )}
+
+      {/* SLICER TAB */}
+      {tab === 'slicer' && (
+        <div style={{ maxWidth: 480 }}>
+          <SectionHead>OrcaSlicer — Direct Slice</SectionHead>
+          <div style={{
+            background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)',
+            borderRadius: 10, padding: 20
+          }}>
+            <div style={{ fontSize: 11, color: '#444', marginBottom: 16, lineHeight: 1.7 }}>
+              Slices the last submitted design using <span style={{ color: '#ddd' }}>Bambu A1 · PLA · 0.20mm</span> profile.
+              Compares actual vs claimed time/weight and flags if difference exceeds 10%.
             </div>
             <button onClick={triggerSlice} disabled={slicing} style={{
-              width: '100%', padding: '9px', background: slicing ? '#333' : '#00ff88',
-              color: slicing ? '#666' : '#000', border: 'none', cursor: slicing ? 'default' : 'pointer',
-              fontWeight: 700, fontSize: '11px', letterSpacing: '0.08em', transition: 'all 0.15s'
+              width: '100%', padding: 12, borderRadius: 6,
+              background: slicing ? '#111' : '#00ff88',
+              color: slicing ? '#333' : '#000',
+              border: slicing ? '1px solid #222' : 'none',
+              fontWeight: 800, fontSize: 12, cursor: slicing ? 'default' : 'pointer',
+              letterSpacing: '0.1em', textTransform: 'uppercase', transition: 'all 0.2s'
             }}>
-              {slicing ? 'SLICING...' : '⚙ SLICE NOW'}
+              {slicing ? '⏳ Slicing...' : '⚙ Slice Now'}
             </button>
             {sliceStatus && (
-              <div style={{ marginTop: '10px', fontSize: '10px', fontFamily: 'monospace', lineHeight: '1.8' }}>
+              <div style={{ marginTop: 16 }}>
                 {sliceStatus.error
-                  ? <span style={{ color: '#ff4444' }}>{sliceStatus.error}</span>
-                  : <>
-                    <div style={{ color: sliceStatus.flagged_for_review ? '#ff9800' : '#00ff88' }}>
-                      {sliceStatus.flagged_for_review ? '⚠ FLAGGED' : '✓ PASS'}
-                    </div>
-                    <div style={{ color: '#888' }}>time: {sliceStatus.actual_time_seconds != null ? `${Math.round(sliceStatus.actual_time_seconds / 60)}min` : '—'}</div>
-                    <div style={{ color: '#888' }}>weight: {sliceStatus.actual_weight_grams ?? '—'}g</div>
-                    {sliceStatus.orca_version && <div style={{ color: '#444' }}>orca: {sliceStatus.orca_version}</div>}
-                  </>
+                  ? <div style={{ color: '#ff4444', fontSize: 12 }}>{sliceStatus.error}</div>
+                  : <SliceCard entry={{ ...sliceStatus, spec_id: 'direct-slice', received_at: new Date().toISOString() }} />
                 }
               </div>
             )}
-          </div>
-
-          {/* Printer Farm */}
-          <div style={{ ...S.label, marginTop: '18px', marginBottom: '10px' }}>Printer Farm</div>
-          <div style={S.card}>
-            {printers.length === 0
-              ? <div style={{ fontSize: '11px', color: '#333', textAlign: 'center', padding: '12px 0' }}>No printers registered</div>
-              : printers.map(p => <PrinterRow key={p.id} printer={p} onAction={printerAction} />)
-            }
-          </div>
-        </div>
-
-        {/* Right column */}
-        <div>
-          {/* Slice Feedback */}
-          <div style={{ ...S.label, marginBottom: '10px' }}>Slice Feedback (from n8n)</div>
-          {feedback.length === 0
-            ? <div style={{ ...S.card, fontSize: '11px', color: '#333', textAlign: 'center', padding: '16px 0', marginBottom: '16px' }}>
-                Send a design to farm to see results here
-              </div>
-            : feedback.slice().reverse().slice(0, 8).map((e, i) => <SliceResult key={i} entry={e} />)
-          }
-
-          {/* Order Log */}
-          <div style={{ ...S.label, marginTop: '4px', marginBottom: '10px' }}>Order Log</div>
-          <div style={S.card}>
-            {orders.length === 0
-              ? <div style={{ fontSize: '11px', color: '#333', textAlign: 'center', padding: '12px 0' }}>No orders yet</div>
-              : orders.slice().reverse().slice(0, 15).map((o, i) => <OrderRow key={i} order={o} />)
-            }
+            {feedback.length > 0 && (
+              <>
+                <div style={{ marginTop: 20, marginBottom: 12, fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em' }}>
+                  Previous Slices
+                </div>
+                {feedback.slice(0, 10).map((e, i) => <SliceCard key={i} entry={e} />)}
+              </>
+            )}
           </div>
         </div>
-      </div>
+      )}
     </div>
+  )
+}
+
+function SectionHead({ children }) {
+  return <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 12, fontWeight: 700 }}>{children}</div>
+}
+
+function EmptyState({ children }) {
+  return (
+    <div style={{
+      background: 'rgba(255,255,255,0.01)', border: '1px dashed rgba(255,255,255,0.05)',
+      borderRadius: 8, padding: '24px 16px', textAlign: 'center',
+      fontSize: 11, color: '#2a2a2a'
+    }}>{children}</div>
   )
 }

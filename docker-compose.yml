@@ -31,11 +31,29 @@ services:
     volumes:
       - minio_data:/data
 
+  n8n:
+    image: n8nio/n8n:latest
+    environment:
+      - N8N_HOST=0.0.0.0
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - NODES_EXCLUDE=[]
+      - N8N_RESTRICT_FILE_ACCESS_TO=${MAKER_AI_DIR:-/data}
+      - MAKER_AI_DIR=${MAKER_AI_DIR:-/data}
+      - ORCA_SLICER_PATH=${ORCA_SLICER_PATH:-/opt/OrcaSlicer.AppImage}
+      - ORCA_PROFILES_DIR=${ORCA_PROFILES_DIR:-/opt/orca-profiles}
+    ports:
+      - "5678:5678"
+    volumes:
+      - n8n_data:/home/node/.n8n
+      - ${MAKER_AI_DIR:-./pipeline}:/data
+
   backend:
     build: ./backend
     environment:
-      DATABASE_URL: postgresql://makerai:${DB_PASSWORD:-makerai_dev}@postgres:5432/makerai
+      DATABASE_URL: postgresql+asyncpg://makerai:${DB_PASSWORD:-makerai_dev}@postgres:5432/makerai
       REDIS_URL: redis://redis:6379
+      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_USER:-makerai}
       MINIO_SECRET_KEY: ${MINIO_PASSWORD:-makerai_dev}
@@ -49,19 +67,19 @@ services:
       - ./backend:/app
 
   frontend:
-    build: ./frontend
-    environment:
-      NEXT_PUBLIC_API_URL: http://localhost:8000
+    build:
+      context: ./frontend
+      args:
+        - VITE_N8N_URL=http://n8n:5678
+        - VITE_API_URL=http://backend:8000
     ports:
-      - "3000:3000"
+      - "5173:5173"
     depends_on:
       - backend
-    volumes:
-      - ./frontend:/app
-      - /app/node_modules
-      - /app/.next
+      - n8n
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  n8n_data:

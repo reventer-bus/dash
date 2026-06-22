@@ -1,0 +1,13 @@
+{
+  "part": "gridfinity_bin",
+  "version": "v0.1",
+  "units": "mm",
+  "template": "gridfinity_bin",
+  "params": {
+    "grid_x": 2,
+    "grid_y": 1,
+    "height_u": 6,
+    "wall": 1.2,
+    "magnet_holes": true
+  }
+}

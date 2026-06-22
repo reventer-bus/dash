@@ -11,7 +11,7 @@ app = FastAPI(
 
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:3000", "https://fofus.in"],
+    allow_origins=["http://localhost:3000", "http://localhost:5173", "https://fofus.in", "https://maker-ai-design-front.vercel.app"],
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -22,7 +22,11 @@ app.include_router(printers.router, prefix="/api/v1/printers", tags=["printers"]
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
 app.include_router(files.router, prefix="/api/v1/files", tags=["files"])
 app.include_router(partners.router, prefix="/api/v1/partners", tags=["partners"])
-app.include_router(ai.router, prefix="/api/v1/ai", tags=["ai"])
+
+# /api/ai-chat — consumed directly by the Vite frontend (Vercel Edge Function proxy in prod)
+# /api/v1/ai/optimise — internal slicer optimisation
+app.include_router(ai.router, prefix="/api", tags=["ai"])
+app.include_router(ai.router, prefix="/api/v1/ai", tags=["ai-v1"])
 
 
 @app.get("/health")

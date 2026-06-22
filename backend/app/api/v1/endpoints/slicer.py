@@ -99,8 +99,19 @@ def _do_slice(stl_path, material, machine, process, layer_height, infill_density
     result = slice_file(
         input_path=stl_path,
         machine=machine,
-        process=process,
         material=material,
+        layer_height=layer_height,
+        infill_density=int(infill_density),
+        infill_pattern=infill_pattern,
+        walls=int(walls),
+        top_layers=int(top_layers),
+        bottom_layers=int(bottom_layers),
+        support_type=support_type,
+        support_threshold=int(support_threshold),
+        print_speed=int(print_speed),
+        travel_speed=int(travel_speed),
+        nozzle_temp=int(nozzle_temp),
+        bed_temp=int(bed_temp),
     )
 
     if uploaded:

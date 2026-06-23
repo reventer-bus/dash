@@ -9,13 +9,17 @@ const STATUS_COLOR = {
 
 const ORDER_STAGES = ['NEW', 'AI_PREP', 'PRINTING', 'POST_PROCESS', 'QC', 'PACK', 'DISPATCH']
 const ORDER_COLOR = {
-  NEW: '#444', AI_PREP: '#4a9eff', PRINTING: '#00ff88',
+  NEW: '#555', AI_PREP: '#4a9eff', PRINTING: '#00ff88',
   POST_PROCESS: '#ff9800', QC: '#aa44ff', PACK: '#ff9800', DISPATCH: '#00ff88'
 }
+const ORDER_ICON = {
+  NEW: '○', AI_PREP: '◎', PRINTING: '⬡', POST_PROCESS: '⚙',
+  QC: '◈', PACK: '□', DISPATCH: '✓'
+}
 
-const MAT_COLOR = { PLA: '#00ff88', PETG: '#4a9eff', ABS: '#ff9800', TPU: '#aa44ff', ASA: '#ff6644', NYLON: '#ffcc00' }
+const MAT_COLOR = { PLA: '#00ff88', PETG: '#4a9eff', ABS: '#ff9800', TPU: '#aa44ff', ASA: '#ff6644', NYLON: '#ffcc00', 'PLA-CF': '#88ff44', 'PA-CF': '#ff88aa' }
 
-// ─── Slicer constants ──────────────────────────────────────────────────────────
+// ─── Slicer constants ─────────────────────────────────────────────────────────
 
 const SLICER_PRESETS = {
   Standard: { layerHeight: '0.20', infillDensity: 15, infillPattern: 'Grid',        walls: 2, topLayers: 4, bottomLayers: 3, supportType: 'none', supportThreshold: 45, printSpeed: 200, travelSpeed: 250, nozzleTemp: 220, bedTemp: 60 },
@@ -35,7 +39,16 @@ const MAT_TEMPS       = {
   'PLA-CF': { nozzle: 230, bed: 60 }, 'PA-CF': { nozzle: 280, bed: 100 },
 }
 
-// ─── Primitives ────────────────────────────────────────────────────────────────
+const CONN_TYPES = [
+  { value: 'manual',    label: 'Manual',        hint: 'Update status via API' },
+  { value: 'bambu',     label: 'Bambu LAN',     hint: 'Bambu X1C/P1S/A1 via local MQTT' },
+  { value: 'moonraker', label: 'Moonraker',     hint: 'Klipper printers via Mainsail/Fluidd' },
+  { value: 'octoprint', label: 'OctoPrint',     hint: 'OctoPrint-compatible printers' },
+]
+
+const SPOOL_MATERIALS = ['PLA', 'PETG', 'ABS', 'TPU', 'ASA', 'NYLON', 'PLA-CF', 'PA-CF', 'RESIN', 'Other']
+
+// ─── Primitives ───────────────────────────────────────────────────────────────
 
 function Tag({ children, color = '#555', bg }) {
   return (
@@ -64,7 +77,7 @@ function EmptyState({ icon = '○', title, hint }) {
     }}>
       <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.15 }}>{icon}</div>
       <div style={{ fontSize: 11, color: '#333', marginBottom: 4 }}>{title}</div>
-      {hint && <div style={{ fontSize: 9, color: '#222', lineHeight: 1.7 }}>{hint}</div>}
+      {hint && <div style={{ fontSize: 9, color: '#222', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{hint}</div>}
     </div>
   )
 }
@@ -80,13 +93,11 @@ function PulsingDot({ color, size = 8 }) {
   )
 }
 
-function Pill({ value, unit, label, color = '#888' }) {
+function Pill({ value, label, color = '#888' }) {
   return (
     <div style={{ textAlign: 'center' }}>
       <div style={{ fontSize: 9, color: '#2a2a2a', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
-      <div style={{ fontSize: 12, fontFamily: 'monospace', color, fontWeight: 600 }}>
-        {value ?? '—'}{unit && <span style={{ fontSize: 9, color: '#333', marginLeft: 1 }}>{unit}</span>}
-      </div>
+      <div style={{ fontSize: 12, fontFamily: 'monospace', color, fontWeight: 600 }}>{value ?? '—'}</div>
     </div>
   )
 }
@@ -114,30 +125,44 @@ function StatCard({ label, value, sub, color = '#fff', icon, alert }) {
   )
 }
 
-// ─── Printer Card ───────────────────────────────────────────────────────────────
+// ─── Printer Card ──────────────────────────────────────────────────────────────
 
-function PrinterCard({ printer, onAction }) {
+function PrinterCard({ printer, onAction, onLivePoll, connType }) {
   const color = STATUS_COLOR[printer.status] || '#555'
   const pct = printer.progress_pct ?? 0
   const maintenanceHours = printer.hours_since_maintenance
   const maintColor = maintenanceHours == null ? '#333'
-    : maintenanceHours > 200 ? '#ff4444'
-    : maintenanceHours > 100 ? '#ff9800' : '#00ff88'
+    : maintenanceHours > 200 ? '#ff4444' : maintenanceHours > 100 ? '#ff9800' : '#00ff88'
+  const [polling, setPolling] = useState(false)
+
+  const doLivePoll = async () => {
+    setPolling(true)
+    await onLivePoll(printer.id)
+    setPolling(false)
+  }
 
   return (
     <div style={{
       background: 'rgba(255,255,255,0.015)', border: `1px solid ${color}1a`,
       borderRadius: 8, padding: '12px 14px', marginBottom: 8
     }}>
-      {/* Header row */}
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <PulsingDot color={color} />
           <span style={{ fontSize: 12, color: '#ddd', fontWeight: 600 }}>{printer.name}</span>
           {printer.model && <span style={{ fontSize: 9, color: '#333' }}>{printer.model}</span>}
+          {connType && connType !== 'manual' && (
+            <Tag color="#4a9eff">{connType}</Tag>
+          )}
         </div>
         <div style={{ display: 'flex', gap: 5, alignItems: 'center' }}>
           <Tag color={color}>{printer.status}</Tag>
+          {connType && connType !== 'manual' && (
+            <button onClick={doLivePoll} disabled={polling} style={{
+              fontSize: 9, padding: '2px 8px', background: '#4a9eff12', border: '1px solid #4a9eff30',
+              color: polling ? '#333' : '#4a9eff', cursor: polling ? 'default' : 'pointer', borderRadius: 3
+            }}>{polling ? '...' : '↻ Live'}</button>
+          )}
           {printer.status === 'printing' && (
             <button onClick={() => onAction(printer.id, 'pause')} style={{
               fontSize: 9, padding: '2px 8px', background: 'transparent',
@@ -152,28 +177,21 @@ function PrinterCard({ printer, onAction }) {
           )}
         </div>
       </div>
-
-      {/* Temperatures + stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginBottom: 10, padding: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: 6 }}>
         <Pill label="Nozzle" value={printer.nozzle_temp != null ? `${printer.nozzle_temp}°` : '—'} color={printer.nozzle_temp > 150 ? '#ff9800' : '#555'} />
         <Pill label="Bed" value={printer.bed_temp != null ? `${printer.bed_temp}°` : '—'} color={printer.bed_temp > 40 ? '#ff9800' : '#555'} />
         <Pill label="Progress" value={printer.status === 'printing' ? `${pct}%` : '—'} color="#00ff88" />
         <Pill label="Maint" value={maintenanceHours != null ? `${maintenanceHours}h` : '—'} color={maintColor} />
       </div>
-
-      {/* Current job */}
       {printer.current_job && (
         <div style={{ fontSize: 9, color: '#444', fontFamily: 'monospace', marginBottom: 8 }}>
           ⬡ {printer.current_job}
+          {printer.layer_num && printer.total_layers && (
+            <span style={{ color: '#2a2a2a', marginLeft: 8 }}>Layer {printer.layer_num}/{printer.total_layers}</span>
+          )}
         </div>
       )}
-
-      {/* Progress bar */}
-      {printer.status === 'printing' && (
-        <ProgressBar pct={pct} color={color} />
-      )}
-
-      {/* ETA */}
+      {printer.status === 'printing' && <ProgressBar pct={pct} color={color} />}
       {printer.eta_minutes != null && printer.status === 'printing' && (
         <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 4, textAlign: 'right' }}>
           ETA {printer.eta_minutes}min
@@ -183,12 +201,157 @@ function PrinterCard({ printer, onAction }) {
   )
 }
 
-// ─── Queue Card ─────────────────────────────────────────────────────────────────
+// ─── Connect Printer Form ─────────────────────────────────────────────────────
 
-function QueueCard({ job, printers, onAssign, onCancel }) {
+function ConnectPrinterForm({ onSave, onCancel, base }) {
+  const [form, setForm] = useState({
+    id: '', name: '', model: '', connection_type: 'manual',
+    host: '', serial: '', access_code: '', api_key: '', material_type: 'PLA'
+  })
+  const [saving, setSaving] = useState(false)
+  const [error, setError] = useState(null)
+  const ct = form.connection_type
+
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+
+  const handleSave = async () => {
+    if (!form.id.trim() || !form.name.trim()) { setError('ID and Name are required'); return }
+    setSaving(true); setError(null)
+    try {
+      const r = await fetch(`${base}/api/v1/printers/`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      })
+      const data = await r.json()
+      if (data.error) setError(data.error)
+      else onSave(data)
+    } catch (e) { setError(e.message) }
+    setSaving(false)
+  }
+
+  const inp = {
+    background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
+    color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
+    fontFamily: 'monospace', width: '100%'
+  }
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 18, marginBottom: 20 }}>
+      <SectionHead>Connect New Printer</SectionHead>
+
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>ID (unique key)</div>
+          <input value={form.id} onChange={e => set('id', e.target.value)} placeholder="bambu-x1c-1" style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Display Name</div>
+          <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Bambu X1C #1" style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Model</div>
+          <input value={form.model} onChange={e => set('model', e.target.value)} placeholder="BambuX1C" style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Default Material</div>
+          <select value={form.material_type} onChange={e => set('material_type', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+            {SLICER_MATS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+      </div>
+
+      <div style={{ marginBottom: 12 }}>
+        <div style={{ fontSize: 9, color: '#444', marginBottom: 6 }}>Connection Type</div>
+        <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
+          {CONN_TYPES.map(c => (
+            <button key={c.value} onClick={() => set('connection_type', c.value)} style={{
+              padding: '5px 12px', fontSize: 9, cursor: 'pointer', borderRadius: 5, fontWeight: 600,
+              background: ct === c.value ? '#00ff8815' : 'transparent',
+              color: ct === c.value ? '#00ff88' : '#2a2a2a',
+              border: ct === c.value ? '1px solid #00ff8830' : '1px solid #1a1a1a',
+            }}>
+              {c.label}
+            </button>
+          ))}
+        </div>
+        <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 5 }}>
+          {CONN_TYPES.find(c => c.value === ct)?.hint}
+        </div>
+      </div>
+
+      {ct !== 'manual' && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>
+            {ct === 'bambu' ? 'Printer IP Address' : 'Host URL (e.g. http://192.168.1.50)'}
+          </div>
+          <input value={form.host} onChange={e => set('host', e.target.value)}
+            placeholder={ct === 'bambu' ? '192.168.1.50' : 'http://192.168.1.50'} style={inp} />
+        </div>
+      )}
+
+      {ct === 'bambu' && (
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
+          <div>
+            <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Device Serial Number</div>
+            <input value={form.serial} onChange={e => set('serial', e.target.value)}
+              placeholder="01P00A123456789" style={inp} />
+          </div>
+          <div>
+            <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Access Code (from screen)</div>
+            <input value={form.access_code} onChange={e => set('access_code', e.target.value)}
+              type="password" placeholder="12345678" style={inp} />
+          </div>
+        </div>
+      )}
+
+      {ct === 'octoprint' && (
+        <div style={{ marginBottom: 10 }}>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>OctoPrint API Key</div>
+          <input value={form.api_key} onChange={e => set('api_key', e.target.value)}
+            type="password" placeholder="A1B2C3D4..." style={inp} />
+        </div>
+      )}
+
+      {ct === 'bambu' && (
+        <div style={{ background: 'rgba(74,158,255,0.06)', border: '1px solid #4a9eff20', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 9, color: '#4a9eff', lineHeight: 1.7 }}>
+          Bambu LAN Mode: On the printer touchscreen → Settings → WLAN → enable LAN Mode. The Access Code is shown below the IP address.
+          Serial number is printed on the printer label or visible in Bambu Handy → Device → Settings.
+        </div>
+      )}
+
+      {ct === 'moonraker' && (
+        <div style={{ background: 'rgba(74,158,255,0.06)', border: '1px solid #4a9eff20', borderRadius: 6, padding: '8px 12px', marginBottom: 12, fontSize: 9, color: '#4a9eff', lineHeight: 1.7 }}>
+          Enter the host where Moonraker is running (Mainsail or Fluidd address). No API key required.
+          Example: http://mainsail.local or http://192.168.1.100
+        </div>
+      )}
+
+      {error && <div style={{ color: '#ff4444', fontSize: 10, marginBottom: 8 }}>{error}</div>}
+
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={handleSave} disabled={saving} style={{
+          flex: 1, padding: '8px', background: saving ? '#111' : '#00ff88', color: saving ? '#333' : '#000',
+          border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: saving ? 'default' : 'pointer'
+        }}>{saving ? 'Connecting...' : '+ Add Printer'}</button>
+        <button onClick={onCancel} style={{
+          padding: '8px 14px', background: 'transparent', border: '1px solid #1a1a1a',
+          color: '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
+        }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Queue Card ────────────────────────────────────────────────────────────────
+
+function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
   const matColor = MAT_COLOR[job.material] || '#555'
   const [assigning, setAssigning] = useState(false)
   const idlePrinters = printers.filter(p => p.status === 'idle')
+  const stageIdx = ORDER_STAGES.indexOf(job.status)
+  const color = ORDER_COLOR[job.status] || '#444'
+  const canAdvance = stageIdx >= 0 && stageIdx < ORDER_STAGES.length - 1
+  const canBack = stageIdx > 0
 
   return (
     <div style={{
@@ -198,12 +361,13 @@ function QueueCard({ job, printers, onAssign, onCancel }) {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
         <div>
           <div style={{ fontSize: 11, color: '#ccc', fontFamily: 'monospace', fontWeight: 600, marginBottom: 3 }}>
-            {job.spec_id || job.id || 'job'}
+            {job.name || job.spec_id || job.id || 'job'}
           </div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
             <Tag color={matColor}>{job.material || 'PLA'}</Tag>
             {job.qty > 1 && <Tag color="#888">×{job.qty}</Tag>}
             {job.priority === 'high' && <Tag color="#ff4444">URGENT</Tag>}
+            <Tag color={color}>{ORDER_ICON[job.status]} {job.status}</Tag>
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
@@ -211,45 +375,247 @@ function QueueCard({ job, printers, onAssign, onCancel }) {
           {job.est_cost && <div style={{ fontSize: 9, color: '#2a2a2a' }}>${job.est_cost}</div>}
         </div>
       </div>
-      <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
-        {assigning && idlePrinters.length > 0 ? (
-          <>
-            <span style={{ fontSize: 9, color: '#444' }}>Assign to:</span>
-            {idlePrinters.map(p => (
-              <button key={p.id} onClick={() => { onAssign(job.id, p.id); setAssigning(false) }} style={{
-                fontSize: 9, padding: '3px 8px', background: '#00ff8812', border: '1px solid #00ff8830',
-                color: '#00ff88', cursor: 'pointer', borderRadius: 3
-              }}>{p.name}</button>
-            ))}
-            <button onClick={() => setAssigning(false)} style={{
-              fontSize: 9, padding: '3px 6px', background: 'transparent', border: '1px solid #1a1a1a',
-              color: '#333', cursor: 'pointer', borderRadius: 3
-            }}>✕</button>
-          </>
-        ) : (
-          <>
+
+      {/* Stage progress bar */}
+      {stageIdx >= 0 && (
+        <div style={{ display: 'flex', gap: 2, marginBottom: 10 }}>
+          {ORDER_STAGES.map((s, i) => (
+            <div key={s} title={s} style={{
+              flex: 1, height: 3, borderRadius: 2,
+              background: i <= stageIdx ? (ORDER_COLOR[ORDER_STAGES[i]] || '#555') : '#111'
+            }} />
+          ))}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', gap: 6, alignItems: 'center', flexWrap: 'wrap' }}>
+        {/* Stage navigation */}
+        {canBack && (
+          <button onClick={() => onAdvance(job.id || job.spec_id, ORDER_STAGES[stageIdx - 1])} style={{
+            fontSize: 9, padding: '3px 8px', background: 'transparent',
+            border: '1px solid #1a1a1a', color: '#444', cursor: 'pointer', borderRadius: 3
+          }}>← Back</button>
+        )}
+        {canAdvance && (
+          <button onClick={() => onAdvance(job.id || job.spec_id, ORDER_STAGES[stageIdx + 1])} style={{
+            fontSize: 9, padding: '3px 10px', background: '#00ff8812',
+            border: '1px solid #00ff8830', color: '#00ff88', cursor: 'pointer', borderRadius: 3, fontWeight: 700
+          }}>Next →</button>
+        )}
+
+        {/* Assign to printer (when PRINTING stage) */}
+        {job.status === 'NEW' || job.status === 'AI_PREP' ? (
+          assigning && idlePrinters.length > 0 ? (
+            <>
+              <span style={{ fontSize: 9, color: '#444' }}>Assign to:</span>
+              {idlePrinters.map(p => (
+                <button key={p.id} onClick={() => { onAssign(job.id || job.spec_id, p.id); setAssigning(false) }} style={{
+                  fontSize: 9, padding: '3px 8px', background: '#00ff8812', border: '1px solid #00ff8830',
+                  color: '#00ff88', cursor: 'pointer', borderRadius: 3
+                }}>{p.name}</button>
+              ))}
+              <button onClick={() => setAssigning(false)} style={{
+                fontSize: 9, padding: '3px 6px', background: 'transparent', border: '1px solid #1a1a1a',
+                color: '#333', cursor: 'pointer', borderRadius: 3
+              }}>✕</button>
+            </>
+          ) : (
             <button onClick={() => setAssigning(true)} disabled={idlePrinters.length === 0} style={{
-              fontSize: 9, padding: '3px 10px', background: idlePrinters.length > 0 ? '#00ff8812' : '#111',
-              border: `1px solid ${idlePrinters.length > 0 ? '#00ff8830' : '#1a1a1a'}`,
-              color: idlePrinters.length > 0 ? '#00ff88' : '#2a2a2a',
+              fontSize: 9, padding: '3px 10px', background: idlePrinters.length > 0 ? '#4a9eff12' : '#111',
+              border: `1px solid ${idlePrinters.length > 0 ? '#4a9eff30' : '#1a1a1a'}`,
+              color: idlePrinters.length > 0 ? '#4a9eff' : '#2a2a2a',
               cursor: idlePrinters.length > 0 ? 'pointer' : 'default', borderRadius: 3
             }}>
-              {idlePrinters.length > 0 ? '▶ Assign' : 'No idle printers'}
+              {idlePrinters.length > 0 ? '⬡ Assign Printer' : 'No idle printers'}
             </button>
-            <button onClick={() => onCancel(job.id)} style={{
-              fontSize: 9, padding: '3px 8px', background: 'transparent',
-              border: '1px solid #1a1a1a', color: '#333', cursor: 'pointer', borderRadius: 3
-            }}>✕ Cancel</button>
-          </>
+          )
+        ) : null}
+
+        <button onClick={() => onCancel(job.id || job.spec_id)} style={{
+          fontSize: 9, padding: '3px 8px', background: 'transparent', marginLeft: 'auto',
+          border: '1px solid #1a1a1a', color: '#333', cursor: 'pointer', borderRadius: 3
+        }}>✕</button>
+      </div>
+      {job.notes && <div style={{ fontSize: 9, color: '#333', marginTop: 6, fontStyle: 'italic' }}>{job.notes}</div>}
+    </div>
+  )
+}
+
+// ─── Kanban Column + Card ─────────────────────────────────────────────────────
+
+function KanbanCard({ job, stage, onMove, onCancel }) {
+  const matColor = MAT_COLOR[job.material] || '#555'
+  const [dragOver, setDragOver] = useState(false)
+
+  return (
+    <div
+      draggable
+      onDragStart={e => { e.dataTransfer.setData('jobId', job.id || job.spec_id); e.dataTransfer.setData('fromStage', stage) }}
+      style={{
+        background: dragOver ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)',
+        border: '1px solid rgba(255,255,255,0.06)',
+        borderRadius: 7, padding: '10px 12px', marginBottom: 6, cursor: 'grab',
+        transition: 'background 0.1s'
+      }}
+    >
+      <div style={{ fontSize: 10, color: '#bbb', fontWeight: 600, marginBottom: 4, fontFamily: 'monospace' }}>
+        {job.name || job.spec_id || job.id}
+      </div>
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+        <Tag color={matColor}>{job.material || 'PLA'}</Tag>
+        {job.qty > 1 && <Tag color="#888">×{job.qty}</Tag>}
+        {job.priority === 'high' && <Tag color="#ff4444">!</Tag>}
+      </div>
+      {job.est_time_min && <div style={{ fontSize: 9, color: '#2a2a2a', fontFamily: 'monospace' }}>{job.est_time_min}min</div>}
+      {job.assigned_printer && <div style={{ fontSize: 8, color: '#4a9eff', marginTop: 2 }}>⬡ {job.assigned_printer}</div>}
+      <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+        {ORDER_STAGES.indexOf(stage) > 0 && (
+          <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) - 1])} style={{
+            fontSize: 8, padding: '2px 6px', background: 'transparent', border: '1px solid #1a1a1a',
+            color: '#444', cursor: 'pointer', borderRadius: 3
+          }}>←</button>
         )}
+        {ORDER_STAGES.indexOf(stage) < ORDER_STAGES.length - 1 && (
+          <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) + 1])} style={{
+            fontSize: 8, padding: '2px 6px', background: '#00ff8810', border: '1px solid #00ff8820',
+            color: '#00ff88', cursor: 'pointer', borderRadius: 3
+          }}>→</button>
+        )}
+        <button onClick={() => onCancel(job.id || job.spec_id)} style={{
+          fontSize: 8, padding: '2px 5px', background: 'transparent', border: '1px solid #1a1a1a',
+          color: '#2a2a2a', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
+        }}>✕</button>
       </div>
     </div>
   )
 }
 
-// ─── Filament Spool Card ─────────────────────────────────────────────────────────
+function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop }) {
+  const [dragOver, setDragOver] = useState(false)
+  const color = ORDER_COLOR[stage] || '#444'
+  const icon = ORDER_ICON[stage] || '○'
 
-function SpoolCard({ spool }) {
+  return (
+    <div
+      onDragOver={e => { e.preventDefault(); setDragOver(true) }}
+      onDragLeave={() => setDragOver(false)}
+      onDrop={e => {
+        e.preventDefault(); setDragOver(false)
+        const jobId = e.dataTransfer.getData('jobId')
+        const from = e.dataTransfer.getData('fromStage')
+        if (jobId && from !== stage) onDrop(jobId, stage)
+      }}
+      style={{
+        minWidth: 180, flex: '1 1 180px',
+        background: dragOver ? `${color}08` : 'rgba(255,255,255,0.01)',
+        border: `1px solid ${dragOver ? color + '30' : 'rgba(255,255,255,0.05)'}`,
+        borderRadius: 8, padding: '10px 10px 6px', transition: 'all 0.15s'
+      }}
+    >
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span style={{ fontSize: 11, color }}>{icon}</span>
+          <span style={{ fontSize: 9, color: '#555', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{stage.replace('_', ' ')}</span>
+        </div>
+        {jobs.length > 0 && (
+          <span style={{ fontSize: 9, background: color + '22', color, borderRadius: 10, padding: '1px 7px', fontWeight: 700 }}>{jobs.length}</span>
+        )}
+      </div>
+      {jobs.length === 0 ? (
+        <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
+          <span style={{ fontSize: 9, color: '#1a1a1a' }}>drop here</span>
+        </div>
+      ) : (
+        jobs.map(job => (
+          <KanbanCard key={job.id || job.spec_id} job={job} stage={stage} onMove={onMove} onCancel={onCancel} />
+        ))
+      )}
+    </div>
+  )
+}
+
+// ─── Add Order Form ───────────────────────────────────────────────────────────
+
+function AddOrderForm({ onSave, onCancel, base }) {
+  const [form, setForm] = useState({ name: '', material: 'PLA', qty: 1, priority: 'normal', est_time_min: '', est_cost: '', notes: '' })
+  const [saving, setSaving] = useState(false)
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const inp = {
+    background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
+    color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
+    fontFamily: 'monospace', width: '100%'
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const body = { ...form, qty: Number(form.qty) }
+      if (form.est_time_min) body.est_time_min = Number(form.est_time_min)
+      if (form.est_cost) body.est_cost = Number(form.est_cost)
+      const r = await fetch(`${base}/api/v1/farm/orders`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      })
+      onSave(await r.json())
+    } catch { /* noop */ }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: 16, marginBottom: 14 }}>
+      <SectionHead>New Work Order</SectionHead>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Job Name / ID</div>
+          <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="gridfinity-bin-v3" style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Material</div>
+          <select value={form.material} onChange={e => set('material', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+            {SLICER_MATS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Quantity</div>
+          <input type="number" min={1} value={form.qty} onChange={e => set('qty', e.target.value)} style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Priority</div>
+          <select value={form.priority} onChange={e => set('priority', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+            <option value="normal">Normal</option>
+            <option value="high">High / Urgent</option>
+            <option value="low">Low</option>
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Est. Time (min)</div>
+          <input type="number" value={form.est_time_min} onChange={e => set('est_time_min', e.target.value)} placeholder="120" style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Est. Cost ($)</div>
+          <input type="number" step="0.01" value={form.est_cost} onChange={e => set('est_cost', e.target.value)} placeholder="2.50" style={inp} />
+        </div>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Notes</div>
+        <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional notes..." style={inp} />
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={handleSave} disabled={saving} style={{
+          flex: 1, padding: '7px', background: saving ? '#111' : '#00ff88', color: saving ? '#333' : '#000',
+          border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: saving ? 'default' : 'pointer'
+        }}>{saving ? 'Adding...' : '+ Add to Kanban'}</button>
+        <button onClick={onCancel} style={{
+          padding: '7px 14px', background: 'transparent', border: '1px solid #1a1a1a',
+          color: '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
+        }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Filament Spool Card ────────────────────────────────────────────────────────
+
+function SpoolCard({ spool, onDelete, onEdit }) {
   const color = MAT_COLOR[spool.material] || '#888'
   const pct = spool.remaining_pct ?? (spool.remaining_g && spool.total_g ? Math.round((spool.remaining_g / spool.total_g) * 100) : null)
   const low = pct != null && pct < 20
@@ -261,14 +627,16 @@ function SpoolCard({ spool }) {
       borderRadius: 8, padding: '12px'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <div style={{ width: 12, height: 12, borderRadius: '50%', background: spool.hex_color || color, flexShrink: 0 }} />
+        <div style={{ width: 12, height: 12, borderRadius: '50%', background: spool.hex_color || color, flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)' }} />
         <div style={{ flex: 1, minWidth: 0 }}>
           <div style={{ fontSize: 10, color: '#ccc', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {spool.brand ? `${spool.brand} ` : ''}{spool.material}
           </div>
           <div style={{ fontSize: 9, color: '#333' }}>{spool.color_name || '—'}</div>
         </div>
-        {low && <Tag color="#ff4444">LOW</Tag>}
+        <div style={{ display: 'flex', gap: 4 }}>
+          {low && <Tag color="#ff4444">LOW</Tag>}
+        </div>
       </div>
       {pct != null && (
         <>
@@ -279,16 +647,129 @@ function SpoolCard({ spool }) {
           <ProgressBar pct={pct} color={low ? '#ff4444' : color} height={4} />
           {spool.remaining_g != null && (
             <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 4 }}>
-              {spool.remaining_g}g remaining · ${((spool.remaining_g * (spool.cost_per_g || 0.025))).toFixed(2)} value
+              {spool.remaining_g}g / {spool.total_g}g · ${((spool.remaining_g * (spool.cost_per_g || 0.025))).toFixed(2)} value
             </div>
           )}
         </>
       )}
+      {spool.assigned_printer && (
+        <div style={{ fontSize: 8, color: '#4a9eff', marginTop: 4 }}>⬡ {spool.assigned_printer}</div>
+      )}
+      {spool.notes && <div style={{ fontSize: 8, color: '#2a2a2a', marginTop: 3, fontStyle: 'italic' }}>{spool.notes}</div>}
+      <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
+        <button onClick={() => onEdit && onEdit(spool)} style={{
+          fontSize: 8, padding: '2px 8px', background: 'transparent', border: '1px solid #1a1a1a', color: '#444', cursor: 'pointer', borderRadius: 3
+        }}>Edit</button>
+        <button onClick={() => onDelete && onDelete(spool.id)} style={{
+          fontSize: 8, padding: '2px 8px', background: 'transparent', border: '1px solid #1a1a1a', color: '#ff444466', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
+        }}>Remove</button>
+      </div>
     </div>
   )
 }
 
-// ─── Alert Card ──────────────────────────────────────────────────────────────────
+// ─── Add Spool Form ───────────────────────────────────────────────────────────
+
+function AddSpoolForm({ onSave, onCancel, base, initialData, printers }) {
+  const [form, setForm] = useState(initialData || {
+    material: 'PLA', brand: '', color_name: '', hex_color: '#00ff88',
+    total_g: 1000, remaining_g: 1000, cost_per_g: 0.025, assigned_printer: '', notes: ''
+  })
+  const [saving, setSaving] = useState(false)
+  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const inp = {
+    background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
+    color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
+    fontFamily: 'monospace', width: '100%'
+  }
+
+  const handleSave = async () => {
+    setSaving(true)
+    try {
+      const body = { ...form, total_g: Number(form.total_g), remaining_g: Number(form.remaining_g), cost_per_g: Number(form.cost_per_g) }
+      const url = initialData?.id
+        ? `${base}/api/v1/farm/inventory/${initialData.id}`
+        : `${base}/api/v1/farm/inventory`
+      const method = initialData?.id ? 'PUT' : 'POST'
+      const r = await fetch(url, {
+        method, headers: { 'Content-Type': 'application/json' }, body: JSON.stringify(body)
+      })
+      onSave(await r.json())
+    } catch { /* noop */ }
+    setSaving(false)
+  }
+
+  return (
+    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: 16, marginBottom: 14 }}>
+      <SectionHead>{initialData ? 'Edit Spool' : 'Add Filament Spool'}</SectionHead>
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Material</div>
+          <select value={form.material} onChange={e => set('material', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+            {SPOOL_MATERIALS.map(m => <option key={m} value={m}>{m}</option>)}
+          </select>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Brand</div>
+          <input value={form.brand} onChange={e => set('brand', e.target.value)} placeholder="Bambu Lab" style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Color Name</div>
+          <input value={form.color_name} onChange={e => set('color_name', e.target.value)} placeholder="Bambu Green" style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Color</div>
+          <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
+            <input type="color" value={form.hex_color} onChange={e => set('hex_color', e.target.value)}
+              style={{ width: 36, height: 32, border: 'none', padding: 2, background: 'transparent', cursor: 'pointer' }} />
+            <input value={form.hex_color} onChange={e => set('hex_color', e.target.value)} style={{ ...inp, flex: 1 }} />
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Total Weight (g)</div>
+          <input type="number" value={form.total_g} onChange={e => set('total_g', e.target.value)} style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Remaining (g)</div>
+          <input type="number" value={form.remaining_g} onChange={e => set('remaining_g', e.target.value)} style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Cost per gram ($)</div>
+          <input type="number" step="0.001" value={form.cost_per_g} onChange={e => set('cost_per_g', e.target.value)} style={inp} />
+        </div>
+        <div>
+          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Assign to Printer</div>
+          <select value={form.assigned_printer || ''} onChange={e => set('assigned_printer', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
+            <option value="">— Unassigned —</option>
+            {printers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ marginBottom: 10 }}>
+        <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Notes</div>
+        <input value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder="Optional notes..." style={inp} />
+      </div>
+      {/* Cost preview */}
+      <div style={{ fontSize: 9, color: '#2a2a2a', marginBottom: 10 }}>
+        Estimated value: ${(Number(form.remaining_g) * Number(form.cost_per_g)).toFixed(2)}
+        {' · '}
+        Total spool: ${(Number(form.total_g) * Number(form.cost_per_g)).toFixed(2)}
+      </div>
+      <div style={{ display: 'flex', gap: 8 }}>
+        <button onClick={handleSave} disabled={saving} style={{
+          flex: 1, padding: '7px', background: saving ? '#111' : '#00ff88', color: saving ? '#333' : '#000',
+          border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: saving ? 'default' : 'pointer'
+        }}>{saving ? 'Saving...' : initialData ? 'Save Changes' : '+ Add Spool'}</button>
+        <button onClick={onCancel} style={{
+          padding: '7px 14px', background: 'transparent', border: '1px solid #1a1a1a',
+          color: '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
+        }}>Cancel</button>
+      </div>
+    </div>
+  )
+}
+
+// ─── Alert Card ────────────────────────────────────────────────────────────────
 
 function AlertCard({ alert }) {
   const color = alert.severity === 'error' ? '#ff4444' : alert.severity === 'warn' ? '#ff9800' : '#4a9eff'
@@ -309,13 +790,12 @@ function AlertCard({ alert }) {
   )
 }
 
-// ─── Slice Card ─────────────────────────────────────────────────────────────────
+// ─── Slice Card ────────────────────────────────────────────────────────────────
 
 function SliceCard({ entry }) {
   const flagged = entry.flagged_for_review
   const timeDiff = entry.actual_time_seconds && entry.claimed_time_seconds
-    ? Math.round(((entry.actual_time_seconds - entry.claimed_time_seconds) / entry.claimed_time_seconds) * 100)
-    : null
+    ? Math.round(((entry.actual_time_seconds - entry.claimed_time_seconds) / entry.claimed_time_seconds) * 100) : null
   return (
     <div style={{
       background: 'rgba(255,255,255,0.015)',
@@ -329,10 +809,10 @@ function SliceCard({ entry }) {
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '6px' }}>
         {[
           ['Material', entry.material || '—'],
-          ['Machine', entry.machine_class || '—'],
-          ['Time', entry.actual_time_seconds != null ? `${Math.round(entry.actual_time_seconds / 60)}min` : '—'],
-          ['Weight', entry.actual_weight_grams != null ? `${entry.actual_weight_grams}g` : '—'],
-          ['Δ Time', timeDiff != null ? `${timeDiff > 0 ? '+' : ''}${timeDiff}%` : '—'],
+          ['Machine',  entry.machine_class || '—'],
+          ['Time',     entry.actual_time_seconds != null ? `${Math.round(entry.actual_time_seconds / 60)}min` : '—'],
+          ['Weight',   entry.actual_weight_grams != null ? `${entry.actual_weight_grams}g` : '—'],
+          ['Δ Time',   timeDiff != null ? `${timeDiff > 0 ? '+' : ''}${timeDiff}%` : '—'],
         ].map(([k, v]) => (
           <div key={k}>
             <div style={{ fontSize: 8, color: '#2a2a2a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
@@ -345,7 +825,7 @@ function SliceCard({ entry }) {
   )
 }
 
-// ─── Order Row ───────────────────────────────────────────────────────────────────
+// ─── Order Row ─────────────────────────────────────────────────────────────────
 
 function OrderRow({ order }) {
   const stageIdx = ORDER_STAGES.indexOf(order.status)
@@ -355,7 +835,7 @@ function OrderRow({ order }) {
     <div style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: '#bbb', fontFamily: 'monospace', fontWeight: 600 }}>{order.spec_id || order.id}</span>
+          <span style={{ fontSize: 10, color: '#bbb', fontFamily: 'monospace', fontWeight: 600 }}>{order.name || order.spec_id || order.id}</span>
           <Tag color={matColor}>{order.material || 'PLA'}</Tag>
           {order.qty > 1 && <span style={{ fontSize: 9, color: '#333' }}>×{order.qty}</span>}
         </div>
@@ -371,14 +851,11 @@ function OrderRow({ order }) {
           ))}
         </div>
       )}
-      {order.est_cost && (
-        <div style={{ fontSize: 8, color: '#2a2a2a', marginTop: 3 }}>est. ${order.est_cost}</div>
-      )}
     </div>
   )
 }
 
-// ─── Analytics Components ─────────────────────────────────────────────────────
+// ─── Analytics helpers ─────────────────────────────────────────────────────────
 
 function MiniBar({ label, value, max, color = '#00ff88', unit = '' }) {
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
@@ -451,8 +928,7 @@ const selectStyle = {
 
 const numStyle = {
   width: '100%', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
-  color: '#bbb', padding: '5px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace',
-  textAlign: 'right'
+  color: '#bbb', padding: '5px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace', textAlign: 'right'
 }
 
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
@@ -467,13 +943,28 @@ export default function Dashboard() {
   const [error, setError] = useState(null)
   const [tab, setTab] = useState('overview')
   const [alertsOpen, setAlertsOpen] = useState(false)
+
+  // Slicer state
   const [slicerFile, setSlicerFile] = useState(null)
   const [slicerMaterial, setSlicerMaterial] = useState('PLA')
   const [slicerMachine, setSlicerMachine] = useState('BambuA1')
   const [slicerSettings, setSlicerSettings] = useState(SLICER_PRESETS.Standard)
   const [activePreset, setActivePreset] = useState('Standard')
+
+  // API URL
   const [apiUrl, setApiUrl] = useState(() => localStorage.getItem('pd_api_url') || API)
   const apiUrlRef = useRef(apiUrl)
+
+  // Printer connectivity
+  const [showAddPrinter, setShowAddPrinter] = useState(false)
+  const [printerConnections, setPrinterConnections] = useState({}) // id → connection_type
+
+  // Inventory / spool management
+  const [showAddSpool, setShowAddSpool] = useState(false)
+  const [editSpool, setEditSpool] = useState(null)
+
+  // Work orders / Kanban
+  const [showAddOrder, setShowAddOrder] = useState(false)
 
   const updateApiUrl = (raw) => {
     const url = raw.trim().replace(/\/$/, '')
@@ -514,13 +1005,13 @@ export default function Dashboard() {
     return () => { alive = false; clearInterval(t) }
   }, [poll])
 
+  // Slicer helpers
   const applyPreset = (name) => {
     setActivePreset(name)
     const preset = SLICER_PRESETS[name]
-    setSlicerSettings(preset)
-    if (MAT_TEMPS[slicerMaterial]) {
-      setSlicerSettings({ ...preset, nozzleTemp: MAT_TEMPS[slicerMaterial].nozzle, bedTemp: MAT_TEMPS[slicerMaterial].bed })
-    }
+    setSlicerSettings(MAT_TEMPS[slicerMaterial]
+      ? { ...preset, nozzleTemp: MAT_TEMPS[slicerMaterial].nozzle, bedTemp: MAT_TEMPS[slicerMaterial].bed }
+      : preset)
   }
 
   const setSetting = (key, value) => {
@@ -548,19 +1039,33 @@ export default function Dashboard() {
       const res = await fetch(`${base}/api/v1/slicer/slice`, { method: 'POST', body: fd })
       setSliceStatus(await res.json())
     } catch (e) {
-      setSliceStatus({ error: e.message === 'Failed to fetch' ? 'Backend unreachable — paste your Railway URL in the API field above and try again.' : e.message })
+      setSliceStatus({ error: e.message === 'Failed to fetch' ? 'Backend unreachable — paste your Railway URL in the API field above.' : e.message })
     }
     setSlicing(false)
   }
 
+  // Printer actions
   const printerAction = async (id, action) => {
     await fetch(`${apiUrlRef.current}/api/v1/printers/${id}/${action}`, { method: 'POST' })
     poll()
   }
 
+  const livePoll = async (printerId) => {
+    try {
+      const r = await fetch(`${apiUrlRef.current}/api/v1/printers/${printerId}/live`)
+      if (r.ok) poll()
+    } catch { /* noop */ }
+  }
+
+  const removePrinter = async (printerId) => {
+    await fetch(`${apiUrlRef.current}/api/v1/printers/${printerId}`, { method: 'DELETE' })
+    poll()
+  }
+
+  // Job / order actions
   const assignJob = async (jobId, printerId) => {
     try {
-      await fetch(`${API}/api/v1/farm/queue/${jobId}/assign`, {
+      await fetch(`${apiUrlRef.current}/api/v1/farm/queue/${jobId}/assign`, {
         method: 'POST', headers: { 'Content-Type': 'application/json' },
         body: JSON.stringify({ printer_id: printerId })
       })
@@ -568,10 +1073,28 @@ export default function Dashboard() {
     } catch { /* noop */ }
   }
 
+  const advanceOrder = async (orderId, newStage) => {
+    try {
+      await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}`, {
+        method: 'PATCH', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ status: newStage })
+      })
+      poll()
+    } catch { /* noop */ }
+  }
+
   const cancelJob = async (jobId) => {
     try {
-      await fetch(`${API}/api/v1/farm/queue/${jobId}`, { method: 'DELETE' })
-      setQueue(q => q.filter(j => j.id !== jobId))
+      await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${jobId}`, { method: 'DELETE' })
+      poll()
+    } catch { /* noop */ }
+  }
+
+  // Spool actions
+  const deleteSpool = async (spoolId) => {
+    try {
+      await fetch(`${apiUrlRef.current}/api/v1/farm/inventory/${spoolId}`, { method: 'DELETE' })
+      poll()
     } catch { /* noop */ }
   }
 
@@ -586,18 +1109,21 @@ export default function Dashboard() {
   const utilization = printers.length > 0 ? Math.round((printing / printers.length) * 100) : 0
   const successRate = feedback.length > 0
     ? Math.round((feedback.filter(f => !f.flagged_for_review).length / feedback.length) * 100) : null
-  const lowSpools = inventory.filter(s => (s.remaining_pct ?? 100) < 20)
+  const lowSpools = inventory.filter(s => (s.remaining_pct ?? ((s.remaining_g && s.total_g) ? Math.round(s.remaining_g / s.total_g * 100) : 100)) < 20)
 
-  // Derived alerts from live data
+  // All work orders (queue + orders combined, deduplicated by id)
+  const allOrders = [...queue, ...orders.filter(o => !queue.find(q => (q.id || q.spec_id) === (o.id || o.spec_id)))]
+  const activeOrders = allOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'DISPATCH' && o.status !== 'LOGGED')
+
   const alerts = [
     ...printers.filter(p => p.status === 'error').map(p => ({
       severity: 'error', title: `${p.name} — Error`, message: p.error_message || 'Printer in error state, requires attention.', ts: null
     })),
     ...printers.filter(p => (p.hours_since_maintenance ?? 0) > 200).map(p => ({
-      severity: 'warn', title: `${p.name} — Maintenance Due`, message: `${p.hours_since_maintenance}h since last maintenance. Service recommended.`, ts: null
+      severity: 'warn', title: `${p.name} — Maintenance Due`, message: `${p.hours_since_maintenance}h since last maintenance.`, ts: null
     })),
     ...feedback.filter(f => f.flagged_for_review).slice(0, 3).map(f => ({
-      severity: 'warn', title: `Slice Flagged — ${f.spec_id || 'job'}`, message: 'Time or weight deviation exceeds threshold. Review before printing.', ts: f.received_at
+      severity: 'warn', title: `Slice Flagged — ${f.spec_id || 'job'}`, message: 'Time or weight deviation exceeds threshold.', ts: f.received_at
     })),
     ...lowSpools.map(s => ({
       severity: 'warn', title: `Low Filament — ${s.brand || ''} ${s.material}`, message: `Only ${s.remaining_pct ?? '?'}% remaining on ${s.color_name || 'spool'}.`, ts: null
@@ -605,31 +1131,39 @@ export default function Dashboard() {
   ]
 
   const TABS = [
-    { id: 'overview', label: 'Overview', icon: '◉' },
-    { id: 'queue', label: 'Queue', icon: '≡', badge: queue.length || null },
-    { id: 'printers', label: 'Printers', icon: '⬡', badge: errored || null },
-    { id: 'analytics', label: 'Analytics', icon: '▦' },
-    { id: 'inventory', label: 'Inventory', icon: '⬜', badge: lowSpools.length || null },
-    { id: 'slicer', label: 'Slicer', icon: '◈' },
+    { id: 'overview',   label: 'Overview',   icon: '◉' },
+    { id: 'kanban',     label: 'Kanban',      icon: '▦', badge: activeOrders.length || null },
+    { id: 'queue',      label: 'Queue',       icon: '≡', badge: queue.length || null },
+    { id: 'printers',   label: 'Printers',    icon: '⬡', badge: errored || null },
+    { id: 'analytics',  label: 'Analytics',   icon: '◎' },
+    { id: 'inventory',  label: 'Inventory',   icon: '⬜', badge: lowSpools.length || null },
+    { id: 'slicer',     label: 'Slicer',      icon: '◈' },
   ]
 
-  // Material breakdown from orders + feedback
   const matBreakdown = {}
   ;[...orders, ...feedback].forEach(item => {
     if (item.material) matBreakdown[item.material] = (matBreakdown[item.material] || 0) + 1
   })
   const maxMatCount = Math.max(1, ...Object.values(matBreakdown))
 
+  // Kanban: group allOrders by stage
+  const kanbanByStage = {}
+  ORDER_STAGES.forEach(s => { kanbanByStage[s] = [] })
+  allOrders.filter(o => o.status !== 'CANCELLED').forEach(o => {
+    const s = o.status
+    if (kanbanByStage[s]) kanbanByStage[s].push(o)
+  })
+
   return (
     <div style={{ minHeight: '100vh', padding: '20px 24px', fontFamily: "'Inter', system-ui, sans-serif", color: 'white', background: '#080808' }}>
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(1.5)} }
         * { box-sizing: border-box }
-        ::-webkit-scrollbar { width: 3px } ::-webkit-scrollbar-track { background: transparent }
+        ::-webkit-scrollbar { width: 3px; height: 3px } ::-webkit-scrollbar-track { background: transparent }
         ::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px }
       `}</style>
 
-      {/* API URL config bar */}
+      {/* API URL bar */}
       {isLocalhost && (
         <div style={{
           background: 'rgba(255,152,0,0.06)', border: '1px solid rgba(255,152,0,0.2)',
@@ -638,29 +1172,15 @@ export default function Dashboard() {
         }}>
           <span style={{ fontSize: 11, flexShrink: 0 }}>⚠</span>
           <span style={{ fontSize: 9, color: '#ff9800', flexShrink: 0 }}>BACKEND URL</span>
-          <input
-            value={apiUrl}
-            onChange={e => updateApiUrl(e.target.value)}
-            placeholder="https://your-app.railway.app"
-            style={{
-              flex: 1, background: '#0d0d0d', border: '1px solid rgba(255,152,0,0.2)',
-              color: '#ccc', padding: '5px 10px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace'
-            }}
-          />
-          <span style={{ fontSize: 9, color: '#555', flexShrink: 0 }}>paste your Railway URL and press Enter</span>
+          <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
+            style={{ flex: 1, background: '#0d0d0d', border: '1px solid rgba(255,152,0,0.2)', color: '#ccc', padding: '5px 10px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace' }} />
         </div>
       )}
       {!isLocalhost && (
         <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
           <span style={{ fontSize: 9, color: '#2a2a2a' }}>API:</span>
-          <input
-            value={apiUrl}
-            onChange={e => updateApiUrl(e.target.value)}
-            style={{
-              width: 280, background: 'transparent', border: 'none', borderBottom: '1px solid #1a1a1a',
-              color: '#2a2a2a', padding: '2px 4px', fontSize: 9, fontFamily: 'monospace'
-            }}
-          />
+          <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)}
+            style={{ width: 280, background: 'transparent', border: 'none', borderBottom: '1px solid #1a1a1a', color: '#2a2a2a', padding: '2px 4px', fontSize: 9, fontFamily: 'monospace' }} />
         </div>
       )}
 
@@ -673,18 +1193,14 @@ export default function Dashboard() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ color: '#ff9800', fontSize: 11 }}>⚠</span>
-            <span style={{ fontSize: 10, color: '#888' }}>
-              {alerts.length} issue{alerts.length > 1 ? 's' : ''} need attention
-            </span>
+            <span style={{ fontSize: 10, color: '#888' }}>{alerts.length} issue{alerts.length > 1 ? 's' : ''} need attention</span>
             <span style={{ fontSize: 9, color: '#333' }}>— click to {alertsOpen ? 'hide' : 'view'}</span>
           </div>
           <span style={{ fontSize: 9, color: '#333' }}>{alertsOpen ? '▲' : '▼'}</span>
         </div>
       )}
       {alertsOpen && alerts.length > 0 && (
-        <div style={{ marginBottom: 16 }}>
-          {alerts.map((a, i) => <AlertCard key={i} alert={a} />)}
-        </div>
+        <div style={{ marginBottom: 16 }}>{alerts.map((a, i) => <AlertCard key={i} alert={a} />)}</div>
       )}
 
       {/* Header */}
@@ -728,29 +1244,29 @@ export default function Dashboard() {
         </div>
       </div>
 
-      {/* Stats row — always visible */}
+      {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 20 }}>
-        <StatCard icon="📦" label="Active Orders" value={stats.active_orders ?? orders.filter(o => !['DISPATCH'].includes(o.status)).length} color="#00ff88" sub={`${orders.length} total`} />
+        <StatCard icon="📦" label="Active Orders" value={activeOrders.length || (stats.active_orders ?? '—')} color="#00ff88" sub={`${allOrders.length} total`} />
         <StatCard icon="⬡" label="Printing" value={printing} color="#4a9eff" sub={`${idle} idle · ${printers.length} total`} />
         <StatCard icon="◎" label="Utilization" value={printers.length > 0 ? `${utilization}%` : '—'} color={utilization > 70 ? '#00ff88' : utilization > 40 ? '#ff9800' : '#555'} sub="fleet capacity" />
         <StatCard icon="⚠" label="Flagged" value={alerts.length > 0 ? alerts.length : (stats.flagged ?? 0)} color="#ff9800" sub="needs review" alert={alerts.length > 0} />
-        <StatCard icon="✓" label="Success Rate" value={successRate != null ? `${successRate}%` : '—'} color={successRate > 90 ? '#00ff88' : '#ff9800'} sub={`${feedback.length} slices this session`} />
+        <StatCard icon="✓" label="Success Rate" value={successRate != null ? `${successRate}%` : '—'} color={successRate > 90 ? '#00ff88' : '#ff9800'} sub={`${feedback.length} slices`} />
       </div>
 
-      {/* ── OVERVIEW ────────────────────────────────────────────────────────── */}
+      {/* ── OVERVIEW ─────────────────────────────────────────────────────────── */}
       {tab === 'overview' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div>
             <SectionHead>Printer Farm</SectionHead>
             {printers.length === 0
-              ? <EmptyState icon="⬡" title="No printers registered" hint={'POST to /api/v1/farm/printer to add a printer\nor connect via OctoPrint/Bambu LAN'} />
-              : printers.map(p => <PrinterCard key={p.id} printer={p} onAction={printerAction} />)
+              ? <EmptyState icon="⬡" title="No printers registered" hint="Go to Printers tab → Connect New Printer\nto add a Bambu, Klipper, or OctoPrint printer" />
+              : printers.map(p => <PrinterCard key={p.id} printer={p} onAction={printerAction} onLivePoll={livePoll} connType={p.connection_type} />)
             }
           </div>
           <div>
             <SectionHead>Recent Activity</SectionHead>
             {feedback.length === 0 && orders.length === 0
-              ? <EmptyState icon="◈" title="No activity yet" hint="Send a design to farm to see slice results and order activity here" />
+              ? <EmptyState icon="◈" title="No activity yet" hint="Use the Slicer tab to slice a file\nor add work orders in Kanban" />
               : <>
                 {feedback.slice(0, 3).map((e, i) => <SliceCard key={i} entry={e} />)}
                 {orders.slice(0, 4).map((o, i) => <OrderRow key={i} order={o} />)}
@@ -760,19 +1276,60 @@ export default function Dashboard() {
         </div>
       )}
 
+      {/* ── KANBAN ───────────────────────────────────────────────────────────── */}
+      {tab === 'kanban' && (
+        <div>
+          <SectionHead
+            action={
+              <button onClick={() => setShowAddOrder(v => !v)} style={{
+                fontSize: 9, padding: '4px 12px', background: showAddOrder ? 'transparent' : '#00ff8812',
+                border: `1px solid ${showAddOrder ? '#1a1a1a' : '#00ff8830'}`,
+                color: showAddOrder ? '#333' : '#00ff88', cursor: 'pointer', borderRadius: 5, fontWeight: 600
+              }}>{showAddOrder ? '✕ Cancel' : '+ New Order'}</button>
+            }
+          >
+            Kanban Board — {activeOrders.length} active
+          </SectionHead>
+
+          {showAddOrder && (
+            <AddOrderForm
+              base={apiUrlRef.current}
+              onSave={() => { setShowAddOrder(false); poll() }}
+              onCancel={() => setShowAddOrder(false)}
+            />
+          )}
+
+          {/* Kanban columns */}
+          <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 12 }}>
+            {ORDER_STAGES.map(stage => (
+              <KanbanColumn
+                key={stage}
+                stage={stage}
+                jobs={kanbanByStage[stage] || []}
+                onMove={advanceOrder}
+                onCancel={cancelJob}
+                onDrop={advanceOrder}
+              />
+            ))}
+          </div>
+
+          <div style={{ marginTop: 8, fontSize: 8, color: '#1a1a1a' }}>
+            Drag cards between columns to advance stages · Click → or ← buttons on each card
+          </div>
+        </div>
+      )}
+
       {/* ── QUEUE ────────────────────────────────────────────────────────────── */}
       {tab === 'queue' && (
         <div style={{ maxWidth: 680 }}>
-          <SectionHead>
-            Print Queue — {queue.length} job{queue.length !== 1 ? 's' : ''}
-          </SectionHead>
+          <SectionHead>Print Queue — {queue.length} job{queue.length !== 1 ? 's' : ''}</SectionHead>
           {queue.length === 0
             ? <EmptyState icon="≡" title="Queue is empty"
-                hint={'Jobs appear here when submitted from the Design Studio.\nSend a design to farm to add it to the queue.'}
+                hint="Jobs appear here when submitted from the Design Studio.\nAdd work orders in the Kanban tab."
               />
             : queue.map(j => (
-                <QueueCard key={j.id} job={j} printers={printers}
-                  onAssign={assignJob} onCancel={cancelJob} />
+                <QueueCard key={j.id || j.spec_id} job={j} printers={printers}
+                  onAssign={assignJob} onCancel={cancelJob} onAdvance={advanceOrder} />
               ))
           }
 
@@ -785,8 +1342,7 @@ export default function Dashboard() {
                   return (
                     <div key={p.id} style={{
                       background: 'rgba(255,255,255,0.02)', border: `1px solid ${color}18`,
-                      borderRadius: 7, padding: '10px 12px',
-                      display: 'flex', alignItems: 'center', gap: 8
+                      borderRadius: 7, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8
                     }}>
                       <PulsingDot color={color} />
                       <div>
@@ -804,17 +1360,60 @@ export default function Dashboard() {
 
       {/* ── PRINTERS ─────────────────────────────────────────────────────────── */}
       {tab === 'printers' && (
-        <div style={{ maxWidth: 700 }}>
-          <SectionHead>{printers.length} Printers</SectionHead>
-          {printers.length === 0
-            ? <EmptyState icon="⬡" title="No printers registered"
-                hint={'Add a printer:\ncurl -X POST ${API}/api/v1/farm/printer \\\n  -H "Content-Type: application/json" \\\n  -d \'{"name":"Bambu A1 #1","model":"BambuA1"}\''}
-              />
-            : printers.map(p => <PrinterCard key={p.id} printer={p} onAction={printerAction} />)
-          }
+        <div style={{ maxWidth: 720 }}>
+          <SectionHead
+            action={
+              <button onClick={() => setShowAddPrinter(v => !v)} style={{
+                fontSize: 9, padding: '4px 12px', background: showAddPrinter ? 'transparent' : '#00ff8812',
+                border: `1px solid ${showAddPrinter ? '#1a1a1a' : '#00ff8830'}`,
+                color: showAddPrinter ? '#333' : '#00ff88', cursor: 'pointer', borderRadius: 5, fontWeight: 600
+              }}>{showAddPrinter ? '✕ Cancel' : '+ Connect Printer'}</button>
+            }
+          >
+            {printers.length} Printers
+          </SectionHead>
+
+          {showAddPrinter && (
+            <ConnectPrinterForm
+              base={apiUrlRef.current}
+              onSave={() => { setShowAddPrinter(false); poll() }}
+              onCancel={() => setShowAddPrinter(false)}
+            />
+          )}
+
+          {/* Connection type guide */}
+          {!showAddPrinter && printers.length === 0 && (
+            <div style={{ marginBottom: 20 }}>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
+                {[
+                  { icon: '◉', name: 'Bambu LAN', desc: 'X1C, P1S, A1 — Enable LAN Mode on printer. Find Access Code in Settings → WLAN.', color: '#00ff88' },
+                  { icon: '⬡', name: 'Moonraker', desc: 'Voron, Ender3 with Klipper — Enter your Mainsail or Fluidd URL.', color: '#4a9eff' },
+                  { icon: '○', name: 'OctoPrint', desc: 'Any FDM printer via OctoPrint — Enter host URL and API key.', color: '#ff9800' },
+                ].map(c => (
+                  <div key={c.name} style={{ background: `${c.color}08`, border: `1px solid ${c.color}18`, borderRadius: 8, padding: '12px' }}>
+                    <div style={{ fontSize: 11, color: c.color, fontWeight: 700, marginBottom: 4 }}>{c.icon} {c.name}</div>
+                    <div style={{ fontSize: 9, color: '#333', lineHeight: 1.6 }}>{c.desc}</div>
+                  </div>
+                ))}
+              </div>
+              <EmptyState icon="⬡" title="No printers connected" hint="Click '+ Connect Printer' above to add your first printer" />
+            </div>
+          )}
+
+          {printers.map(p => (
+            <div key={p.id}>
+              <PrinterCard printer={p} onAction={printerAction} onLivePoll={livePoll} connType={p.connection_type} />
+              <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -6, marginBottom: 10 }}>
+                <button onClick={() => removePrinter(p.id)} style={{
+                  fontSize: 8, padding: '2px 10px', background: 'transparent',
+                  border: '1px solid #1a1a1a', color: '#ff444444', cursor: 'pointer', borderRadius: 3
+                }}>Remove printer</button>
+              </div>
+            </div>
+          ))}
 
           {printers.length > 0 && (
-            <div style={{ marginTop: 20 }}>
+            <div style={{ marginTop: 12 }}>
               <SectionHead>Fleet Health</SectionHead>
               <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16 }}>
                 {[
@@ -824,9 +1423,6 @@ export default function Dashboard() {
                 ].map(([label, val, total, color]) => (
                   <MiniBar key={label} label={label} value={val} max={total} color={color} unit={` / ${total}`} />
                 ))}
-                <div style={{ marginTop: 12, fontSize: 9, color: '#2a2a2a' }}>
-                  Utilization: {utilization}% · {printing} of {printers.length} printers active
-                </div>
               </div>
             </div>
           )}
@@ -843,35 +1439,41 @@ export default function Dashboard() {
                 ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No printer data yet</div>
                 : <>
                   <MiniBar label="Utilization" value={utilization} max={100} color={utilization > 70 ? '#00ff88' : '#ff9800'} unit="%" />
-                  <MiniBar label="Printers Printing" value={printing} max={printers.length} color="#00ff88" unit={` of ${printers.length}`} />
-                  <MiniBar label="Printers Idle" value={idle} max={printers.length} color="#4a9eff" unit={` of ${printers.length}`} />
-                  {errored > 0 && <MiniBar label="In Error State" value={errored} max={printers.length} color="#ff4444" unit={` of ${printers.length}`} />}
+                  <MiniBar label="Printing" value={printing} max={printers.length} color="#00ff88" unit={` of ${printers.length}`} />
+                  <MiniBar label="Idle" value={idle} max={printers.length} color="#4a9eff" unit={` of ${printers.length}`} />
+                  {errored > 0 && <MiniBar label="In Error" value={errored} max={printers.length} color="#ff4444" unit={` of ${printers.length}`} />}
                 </>
               }
             </div>
 
-            <SectionHead>Slice Quality</SectionHead>
+            <SectionHead>Kanban Pipeline</SectionHead>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16 }}>
+              {allOrders.length === 0
+                ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No orders yet</div>
+                : ORDER_STAGES.map(stage => {
+                    const count = kanbanByStage[stage]?.length ?? 0
+                    if (count === 0) return null
+                    return <MiniBar key={stage} label={stage.replace('_', ' ')} value={count} max={allOrders.length} color={ORDER_COLOR[stage] || '#555'} unit={` job${count > 1 ? 's' : ''}`} />
+                  })
+              }
+            </div>
+          </div>
+
+          <div>
+            <SectionHead>Slice Quality</SectionHead>
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16, marginBottom: 16 }}>
               {feedback.length === 0
                 ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No slice data yet</div>
                 : <>
                   <MiniBar label="Success Rate" value={successRate} max={100} color={successRate > 90 ? '#00ff88' : '#ff9800'} unit="%" />
                   <MiniBar label="Passed" value={feedback.filter(f => !f.flagged_for_review).length} max={feedback.length} color="#00ff88" unit={` of ${feedback.length}`} />
                   <MiniBar label="Flagged" value={feedback.filter(f => f.flagged_for_review).length} max={feedback.length} color="#ff9800" unit={` of ${feedback.length}`} />
-                  <div style={{ marginTop: 10, fontSize: 9, color: '#2a2a2a' }}>
-                    Avg time: {feedback.length > 0 && feedback[0].actual_time_seconds
-                      ? `${Math.round(feedback.reduce((s, f) => s + (f.actual_time_seconds || 0), 0) / feedback.length / 60)}min`
-                      : '—'
-                    }
-                  </div>
                 </>
               }
             </div>
-          </div>
 
-          <div>
             <SectionHead>Material Breakdown</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16 }}>
               {Object.keys(matBreakdown).length === 0
                 ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No order data yet</div>
                 : Object.entries(matBreakdown)
@@ -882,46 +1484,91 @@ export default function Dashboard() {
               }
             </div>
 
-            <SectionHead>Order Pipeline</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16 }}>
-              {orders.length === 0
-                ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No orders yet</div>
-                : ORDER_STAGES.map(stage => {
-                    const count = orders.filter(o => o.status === stage).length
-                    if (count === 0) return null
-                    return <MiniBar key={stage} label={stage} value={count} max={orders.length} color={ORDER_COLOR[stage] || '#555'} unit={` job${count > 1 ? 's' : ''}`} />
-                  })
-              }
-            </div>
+            {inventory.length > 0 && (
+              <>
+                <SectionHead style={{ marginTop: 16 }}>Filament Stock</SectionHead>
+                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16, marginTop: 16 }}>
+                  {inventory.map((s, i) => {
+                    const pct = s.remaining_pct ?? (s.remaining_g && s.total_g ? Math.round(s.remaining_g / s.total_g * 100) : null)
+                    const color = MAT_COLOR[s.material] || '#888'
+                    return pct != null ? (
+                      <MiniBar key={i} label={`${s.brand || ''} ${s.material} ${s.color_name || ''}`.trim()} value={pct} max={100} color={pct < 20 ? '#ff4444' : color} unit="%" />
+                    ) : null
+                  })}
+                </div>
+              </>
+            )}
           </div>
         </div>
       )}
 
-      {/* ── INVENTORY ─────────────────────────────────────────────────────────── */}
+      {/* ── INVENTORY ────────────────────────────────────────────────────────── */}
       {tab === 'inventory' && (
         <div>
-          <SectionHead>
-            Filament Inventory — {inventory.length} spools
+          <SectionHead
+            action={
+              <button onClick={() => { setShowAddSpool(v => !v); setEditSpool(null) }} style={{
+                fontSize: 9, padding: '4px 12px', background: showAddSpool ? 'transparent' : '#00ff8812',
+                border: `1px solid ${showAddSpool ? '#1a1a1a' : '#00ff8830'}`,
+                color: showAddSpool ? '#333' : '#00ff88', cursor: 'pointer', borderRadius: 5, fontWeight: 600
+              }}>{showAddSpool ? '✕ Cancel' : '+ Add Spool'}</button>
+            }
+          >
+            Filament Inventory — {inventory.length} spool{inventory.length !== 1 ? 's' : ''}
           </SectionHead>
-          {inventory.length === 0
-            ? <EmptyState icon="⬜" title="No inventory tracked"
-                hint={'Add spools:\ncurl -X POST ${API}/api/v1/farm/inventory \\\n  -H "Content-Type: application/json" \\\n  -d \'{"material":"PLA","brand":"Bambu","color_name":"Green","total_g":1000,"remaining_g":850}\' '}
-              />
-            : <>
+
+          {(showAddSpool || editSpool) && (
+            <AddSpoolForm
+              base={apiUrlRef.current}
+              printers={printers}
+              initialData={editSpool}
+              onSave={() => { setShowAddSpool(false); setEditSpool(null); poll() }}
+              onCancel={() => { setShowAddSpool(false); setEditSpool(null) }}
+            />
+          )}
+
+          {inventory.length === 0 && !showAddSpool ? (
+            <EmptyState icon="⬜" title="No filament tracked"
+              hint="Click '+ Add Spool' to track filament stock, assign spools to printers, and get low-stock alerts"
+            />
+          ) : (
+            <>
               {lowSpools.length > 0 && (
-                <div style={{ marginBottom: 16 }}>
+                <div style={{ marginBottom: 20 }}>
                   <SectionHead>⚠ Low Stock</SectionHead>
-                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 10, marginBottom: 16 }}>
-                    {lowSpools.map((s, i) => <SpoolCard key={i} spool={s} />)}
+                  <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 10 }}>
+                    {lowSpools.map((s, i) => <SpoolCard key={i} spool={s} onDelete={deleteSpool} onEdit={s => { setEditSpool(s); setShowAddSpool(false) }} />)}
                   </div>
                 </div>
               )}
               <SectionHead>All Spools</SectionHead>
-              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(200px,1fr))', gap: 10 }}>
-                {inventory.map((s, i) => <SpoolCard key={i} spool={s} />)}
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(210px,1fr))', gap: 10 }}>
+                {inventory.map((s, i) => <SpoolCard key={i} spool={s} onDelete={deleteSpool} onEdit={s => { setEditSpool(s); setShowAddSpool(false) }} />)}
+              </div>
+
+              {/* Inventory summary */}
+              <div style={{ marginTop: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: 14, display: 'flex', gap: 24 }}>
+                <div>
+                  <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Total Filament</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#ccc' }}>
+                    {inventory.reduce((s, sp) => s + (sp.remaining_g || 0), 0).toFixed(0)}g
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Estimated Value</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#00ff88' }}>
+                    ${inventory.reduce((s, sp) => s + (sp.remaining_g || 0) * (sp.cost_per_g || 0.025), 0).toFixed(2)}
+                  </div>
+                </div>
+                <div>
+                  <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Low Stock</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: lowSpools.length > 0 ? '#ff4444' : '#ccc' }}>
+                    {lowSpools.length} spool{lowSpools.length !== 1 ? 's' : ''}
+                  </div>
+                </div>
               </div>
             </>
-          }
+          )}
         </div>
       )}
 
@@ -929,7 +1576,6 @@ export default function Dashboard() {
       {tab === 'slicer' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 900 }}>
 
-          {/* Left column — file + presets + machine setup */}
           <div>
             <SectionHead>Backend Connection</SectionHead>
             <div style={{
@@ -940,18 +1586,10 @@ export default function Dashboard() {
               <div style={{ fontSize: 9, color: isLocalhost ? '#ff9800' : '#00ff88', marginBottom: 6, fontWeight: 600 }}>
                 {isLocalhost ? '⚠ Not connected — set your Railway URL' : '✓ Connected'}
               </div>
-              <input
-                value={apiUrl}
-                onChange={e => updateApiUrl(e.target.value)}
-                placeholder="https://your-app.railway.app"
-                style={{
-                  width: '100%', background: '#0a0a0a',
-                  border: `1px solid ${isLocalhost ? 'rgba(255,152,0,0.2)' : 'rgba(0,255,136,0.15)'}`,
-                  color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'monospace'
-                }}
-              />
+              <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
+                style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${isLocalhost ? 'rgba(255,152,0,0.2)' : 'rgba(0,255,136,0.15)'}`, color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'monospace' }} />
               <div style={{ fontSize: 8, color: '#2a2a2a', marginTop: 5, lineHeight: 1.6 }}>
-                Find it in Railway → your backend service → Settings → Networking → Public URL
+                Railway → backend service → Settings → Networking → Public URL
               </div>
             </div>
 
@@ -997,7 +1635,6 @@ export default function Dashboard() {
               </SlicerParam>
             </div>
 
-            {/* Results */}
             {sliceStatus && (
               <div style={{ marginTop: 16 }}>
                 <SectionHead>Last Result</SectionHead>
@@ -1015,9 +1652,7 @@ export default function Dashboard() {
             )}
           </div>
 
-          {/* Right column — all OrcaSlicer parameters */}
           <div>
-            {/* Infill */}
             <SectionHead>Infill</SectionHead>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
               <SlicerParam label="Density">
@@ -1037,7 +1672,6 @@ export default function Dashboard() {
               </SlicerParam>
             </div>
 
-            {/* Walls */}
             <SectionHead>Walls &amp; Layers</SectionHead>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
               <SlicerParam label="Perimeters">
@@ -1054,7 +1688,6 @@ export default function Dashboard() {
               </SlicerParam>
             </div>
 
-            {/* Supports */}
             <SectionHead>Support</SectionHead>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 10px', marginBottom: 14 }}>
               <SlicerParam label="Type">
@@ -1084,7 +1717,6 @@ export default function Dashboard() {
               )}
             </div>
 
-            {/* Speed */}
             <SectionHead>Speed</SectionHead>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
               <SlicerParam label="Print Speed">
@@ -1109,7 +1741,6 @@ export default function Dashboard() {
               </SlicerParam>
             </div>
 
-            {/* Temperature */}
             <SectionHead>Temperature</SectionHead>
             <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 18 }}>
               <SlicerParam label="Nozzle">
@@ -1134,7 +1765,6 @@ export default function Dashboard() {
               </SlicerParam>
             </div>
 
-            {/* Slice button */}
             <button onClick={triggerSlice} disabled={slicing} style={{
               width: '100%', padding: 13, borderRadius: 7,
               background: slicing ? '#0d0d0d' : '#00ff88',
@@ -1150,7 +1780,6 @@ export default function Dashboard() {
               {slicerSettings.supportType !== 'none' ? ` · ${slicerSettings.supportType} supports` : ''}
             </div>
           </div>
-
         </div>
       )}
     </div>

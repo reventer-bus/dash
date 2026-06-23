@@ -14,7 +14,6 @@ jobs:
   deploy-backend:
     name: Backend → Railway (CLI fallback)
     runs-on: ubuntu-latest
-    if: ${{ vars.RAILWAY_DEPLOY_ENABLED == 'true' }}
     steps:
       - uses: actions/checkout@v4
 
@@ -24,10 +23,11 @@ jobs:
       - name: Deploy to Railway
         env:
           RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
+        # Runs from repo root — Dockerfile and railway.toml live here
+        # Skips gracefully if RAILWAY_TOKEN secret is not configured
         run: |
+          test -n "$RAILWAY_TOKEN" || { echo "RAILWAY_TOKEN not set — skipping"; exit 0; }
           railway up \
             --project d8f71a07-6890-431b-8e99-425d5bcd97f8 \
             --environment production \
-            --service maker-ai-backend \
             --detach
-        working-directory: ./backend

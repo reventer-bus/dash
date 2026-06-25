@@ -838,6 +838,26 @@ function SliceCard({ entry }) {
           </div>
         ))}
       </div>
+      {entry.quote && (
+        <div style={{ marginTop: 8, padding: '7px 10px', background: '#00cc6608', border: '1px solid #00cc6620', borderRadius: 5, display: 'flex', alignItems: 'center', justifyContent: 'space-between' }}>
+          <div style={{ display: 'flex', gap: 14 }}>
+            {[
+              ['Material', `₹${entry.quote.material_cost}`],
+              ['Machine',  `₹${entry.quote.machine_cost}`],
+              ['Service',  `₹${entry.quote.service_fee}`],
+            ].map(([k, v]) => (
+              <div key={k}>
+                <div style={{ fontSize: 7, color: T?.textFaint ?? '#999', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
+                <div style={{ fontSize: 9, color: T?.textDim ?? '#888', fontFamily: 'monospace' }}>{v}</div>
+              </div>
+            ))}
+          </div>
+          <div style={{ textAlign: 'right' }}>
+            <div style={{ fontSize: 7, color: T?.textFaint ?? '#999', textTransform: 'uppercase', letterSpacing: '0.08em' }}>Total</div>
+            <div style={{ fontSize: 13, fontWeight: 700, color: '#00cc66', fontFamily: 'monospace' }}>₹{entry.quote.total}</div>
+          </div>
+        </div>
+      )}
       <div style={{ marginTop: 7, fontSize: 8, color: T?.textFaint ?? '#1e1e1e' }}>{new Date(entry.received_at).toLocaleString()}</div>
     </div>
   )

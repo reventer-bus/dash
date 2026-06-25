@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer
+from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing
 from app.services import farm_store
 
 
@@ -51,6 +51,9 @@ app.include_router(partners.router, prefix="/api/v1/partners", tags=["partners"]
 # Farm dashboard + OrcaSlicer
 app.include_router(farm.router, prefix="/api/v1/farm", tags=["farm"])
 app.include_router(slicer.router, prefix="/api/v1/slicer", tags=["slicer"])
+
+# Pricing — fofus-quote engine
+app.include_router(pricing.router, prefix="/api/v1/pricing", tags=["pricing"])
 
 
 @app.get("/health")

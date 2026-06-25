@@ -12,6 +12,7 @@ from fastapi import APIRouter, UploadFile, File, Form
 from pydantic import BaseModel
 from app.services.orca_slicer import slice_file
 from app.services import farm_store
+from app.services.quote_engine import build_quote
 
 router = APIRouter()
 
@@ -136,9 +137,16 @@ def _do_slice(stl_path, material, machine, process, layer_height, infill_density
         "flagged_for_review": result.flagged_for_review,
         "orca_version": result.orca_version,
         "error": result.error,
+        "quote": None,
     }
 
     if result.error is None:
+        weight = result.actual_weight_grams or 0
+        time_min = (result.actual_time_seconds or 0) / 60.0
+        if weight > 0 and time_min > 0:
+            q = build_quote(weight_g=weight, print_time_min=time_min,
+                            material=material, machine=machine, source="gcode")
+            payload["quote"] = q.to_dict()
         farm_store.add_feedback(payload)
 
     return payload

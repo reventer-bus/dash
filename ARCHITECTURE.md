@@ -55,9 +55,42 @@ dash/
 | Service | Platform | URL |
 |---------|----------|-----|
 | Frontend (printdash) | Vercel | `101-3ddevine.platform.fofus.in` |
-| Backend API | Railway | `https://*.railway.app` |
+| Backend API | Ubuntu server + Tailscale Funnel | `https://<hostname>.<tailnet>.ts.net` |
 | Shopify store | Shopify | `store.fofus.in` |
 | Customer portal | Vercel | (separate project) |
+
+### Backend Hosting (Ubuntu + Tailscale Funnel)
+
+The backend runs as a systemd service on a local Ubuntu 22.04/24.04 server and is exposed
+publicly via Tailscale Funnel (no open firewall ports required).
+
+```
+backend/
+├── setup-ubuntu.sh           ← Run once as root on a fresh Ubuntu server
+├── update.sh                 ← Pull latest + restart (run as root after deploys)
+└── printdash-backend.service ← Systemd unit (copied to /etc/systemd/system/)
+```
+
+**First-time setup:**
+```bash
+sudo bash setup-ubuntu.sh
+# Then fill in tokens:
+sudo nano /etc/printdash/env
+sudo systemctl restart printdash-backend
+# Connect Tailscale and enable Funnel:
+sudo tailscale up
+sudo tailscale funnel --bg 8000
+# Get the public URL:
+tailscale funnel status
+# → https://<hostname>.<tailnet>.ts.net
+```
+
+**Updating after a code push:**
+```bash
+sudo bash /opt/printdash-backend/backend/update.sh
+```
+
+Data is persisted to `/var/lib/printdash/spec/` (set via `MAKER_AI_DIR` env var), which survives service restarts.
 
 ### Domain Convention
 ```

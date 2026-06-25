@@ -227,8 +227,8 @@ Mark error     →  POST  /api/v1/farm/orders/{id}/print-error  { has_error: tru
 | Inventory | Filament spool tracking, low-stock alerts |
 | Slicer | OrcaSlicer presets, file upload |
 | Domain | `101-3ddevine.platform.fofus.in` on Vercel + GoDaddy CNAME |
-| Shopify push | Tracking + fulfillment push back to Shopify Admin API |
-| Partner assign | Admin assigns orders to partners via API |
+| Shopify push | ⬆ Shopify button on DISPATCH cards — form for company/tracking/URL/notify, calls shopify-push API |
+| Partner assign | 👤 Assign button on every card — inline form accepts partner name or id:name, calls assign-partner API |
 
 ---
 

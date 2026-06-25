@@ -454,7 +454,7 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
 
 // ─── Kanban Column + Card ─────────────────────────────────────────────────────
 
-function KanbanCard({ job, stage, onMove, onMessage, onPhoto, onMarkError }) {
+function KanbanCard({ job, stage, onMove, onMessage, onPhoto, onMarkError, onAssignPartner, onShopifyPush }) {
   const T = useT()
   const matColor = MAT_COLOR[job.material] || '#555'
   const [dragOver, setDragOver] = useState(false)
@@ -463,6 +463,12 @@ function KanbanCard({ job, stage, onMove, onMessage, onPhoto, onMarkError }) {
   const [sending, setSending] = useState(false)
   const [uploading, setUploading] = useState(false)
   const [showPhotos, setShowPhotos] = useState(false)
+  const [showAssign, setShowAssign] = useState(false)
+  const [partnerInput, setPartnerInput] = useState(job.assigned_partner_name || job.assigned_partner || '')
+  const [showShopifyPush, setShowShopifyPush] = useState(false)
+  const [pushForm, setPushForm] = useState({ tracking_company: '', tracking_number: '', tracking_url: '', notify_customer: false })
+  const [pushing, setPushing] = useState(false)
+  const [pushDone, setPushDone] = useState(false)
   const photoRef = useRef(null)
 
   const jobId = job.id || job.spec_id
@@ -575,11 +581,108 @@ function KanbanCard({ job, stage, onMove, onMessage, onPhoto, onMarkError }) {
           {hasError ? '⚠ Error' : '⚐ Error?'}
         </button>
 
+        {/* Assign partner */}
+        <button onClick={() => setShowAssign(v => !v)} style={{
+          ...btnBase, color: job.assigned_partner ? '#aa44ff' : (T?.textFaint ?? '#333'),
+          border: `1px solid ${job.assigned_partner ? '#aa44ff44' : (T?.border ?? '#1a1a1a')}`,
+        }}>
+          👤{job.assigned_partner_name ? ` ${job.assigned_partner_name}` : job.assigned_partner ? ` ${job.assigned_partner}` : ' Assign'}
+        </button>
+
+        {/* Shopify push — only for Shopify orders at DISPATCH stage */}
+        {job.shopify_order_id && stage === 'DISPATCH' && (
+          <button onClick={() => setShowShopifyPush(v => !v)} style={{
+            ...btnBase,
+            color: pushDone ? '#00cc66' : '#4a9eff',
+            border: `1px solid ${pushDone ? '#00cc6630' : '#4a9eff30'}`,
+            background: pushDone ? '#00cc6608' : '#4a9eff08',
+          }}>
+            {pushDone ? '✓ Pushed' : '⬆ Shopify'}
+          </button>
+        )}
+
         {/* Upload more photos when panel is open */}
         {showPhotos && photos.length > 0 && (
           <button onClick={() => photoRef.current?.click()} style={{ ...btnBase }}>+ Photo</button>
         )}
       </div>
+
+      {/* Partner assignment panel */}
+      {showAssign && (
+        <div style={{ marginTop: 8, borderTop: `1px solid ${T?.border ?? '#1a1a1a'}`, paddingTop: 8 }}>
+          <div style={{ fontSize: 8, color: T?.textDim ?? '#555', marginBottom: 5, textTransform: 'uppercase', letterSpacing: '0.08em' }}>Assign Partner</div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input
+              value={partnerInput}
+              onChange={e => setPartnerInput(e.target.value)}
+              placeholder="Partner name or ID…"
+              style={{
+                flex: 1, fontSize: 9, padding: '4px 7px', borderRadius: 4,
+                background: T?.inputBg ?? '#0d0d0d', border: `1px solid ${T?.inputBorder ?? '#1a1a1a'}`,
+                color: T?.text ?? '#ccc', outline: 'none'
+              }}
+            />
+            <button onClick={async () => {
+              if (!partnerInput.trim()) return
+              await onAssignPartner(jobId, partnerInput.trim())
+              setShowAssign(false)
+            }} style={{ ...btnBase, background: '#aa44ff12', border: '1px solid #aa44ff30', color: '#aa44ff', padding: '4px 8px' }}>
+              Save
+            </button>
+          </div>
+          {job.assigned_partner && (
+            <div style={{ fontSize: 8, color: T?.textFaint ?? '#444', marginTop: 4 }}>
+              Currently: {job.assigned_partner_name || job.assigned_partner}
+            </div>
+          )}
+        </div>
+      )}
+
+      {/* Shopify tracking push panel */}
+      {showShopifyPush && (
+        <div style={{ marginTop: 8, borderTop: `1px solid ${T?.border ?? '#1a1a1a'}`, paddingTop: 8 }}>
+          <div style={{ fontSize: 8, color: '#4a9eff', marginBottom: 6, textTransform: 'uppercase', letterSpacing: '0.08em', fontWeight: 700 }}>
+            Push to Shopify
+          </div>
+          {[
+            ['Courier Company', 'tracking_company', 'Delhivery / DTDC / FedEx…'],
+            ['Tracking Number', 'tracking_number', 'AWB123456789'],
+            ['Tracking URL', 'tracking_url', 'https://track.delhivery.com/…'],
+          ].map(([label, key, placeholder]) => (
+            <div key={key} style={{ marginBottom: 6 }}>
+              <div style={{ fontSize: 8, color: T?.textDim ?? '#555', marginBottom: 2 }}>{label}</div>
+              <input
+                value={pushForm[key]}
+                onChange={e => setPushForm(f => ({ ...f, [key]: e.target.value }))}
+                placeholder={placeholder}
+                style={{
+                  width: '100%', fontSize: 9, padding: '4px 7px', borderRadius: 4,
+                  background: T?.inputBg ?? '#0d0d0d', border: `1px solid ${T?.inputBorder ?? '#1a1a1a'}`,
+                  color: T?.text ?? '#ccc', outline: 'none', boxSizing: 'border-box'
+                }}
+              />
+            </div>
+          ))}
+          <label style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9, color: T?.textDim ?? '#555', marginBottom: 8, cursor: 'pointer' }}>
+            <input type="checkbox" checked={pushForm.notify_customer}
+              onChange={e => setPushForm(f => ({ ...f, notify_customer: e.target.checked }))} />
+            Email customer with tracking info
+          </label>
+          <button onClick={async () => {
+            setPushing(true)
+            await onShopifyPush(jobId, pushForm)
+            setPushing(false)
+            setPushDone(true)
+            setShowShopifyPush(false)
+          }} disabled={pushing || !pushForm.tracking_number} style={{
+            width: '100%', padding: '6px', fontSize: 10, fontWeight: 700, cursor: pushing || !pushForm.tracking_number ? 'default' : 'pointer',
+            background: pushing ? (T?.inputBg ?? '#111') : '#4a9eff', color: pushing ? (T?.textDim ?? '#444') : '#000',
+            border: 'none', borderRadius: 5
+          }}>
+            {pushing ? '⏳ Pushing…' : '⬆ Push Fulfillment to Shopify'}
+          </button>
+        </div>
+      )}
 
       {/* Message thread */}
       {showMsgs && (
@@ -640,7 +743,7 @@ function KanbanCard({ job, stage, onMove, onMessage, onPhoto, onMarkError }) {
   )
 }
 
-function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop, onMessage, onPhoto, onMarkError }) {
+function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop, onMessage, onPhoto, onMarkError, onAssignPartner, onShopifyPush }) {
   const T = useT()
   const [dragOver, setDragOver] = useState(false)
   const color = ORDER_COLOR[stage] || '#444'
@@ -680,7 +783,8 @@ function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop, onMessage, onPhot
         jobs.map(job => (
           <KanbanCard key={job.id || job.spec_id} job={job} stage={stage}
             onMove={onMove} onCancel={onCancel}
-            onMessage={onMessage} onPhoto={onPhoto} onMarkError={onMarkError} />
+            onMessage={onMessage} onPhoto={onPhoto} onMarkError={onMarkError}
+            onAssignPartner={onAssignPartner} onShopifyPush={onShopifyPush} />
         ))
       )}
     </div>
@@ -1274,6 +1378,30 @@ export default function Dashboard({ darkMode = false }) {
     } catch { /* noop */ }
   }
 
+  const assignPartner = async (orderId, partnerInput) => {
+    try {
+      // Accept "name" or "id:name" format
+      const [partnerIdRaw, ...rest] = partnerInput.split(':')
+      const partnerId = partnerIdRaw.trim().toLowerCase().replace(/\s+/g, '-')
+      const partnerName = rest.length > 0 ? rest.join(':').trim() : partnerInput.trim()
+      await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}/assign-partner`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ partner_id: `ptr_${partnerId}`, partner_name: partnerName })
+      })
+      poll()
+    } catch { /* noop */ }
+  }
+
+  const shopifyPush = async (orderId, form) => {
+    try {
+      await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}/shopify-push`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(form)
+      })
+      poll()
+    } catch { /* noop */ }
+  }
+
   // Spool actions
   const deleteSpool = async (spoolId) => {
     try {
@@ -1494,6 +1622,8 @@ export default function Dashboard({ darkMode = false }) {
                 onMessage={addMessage}
                 onPhoto={uploadPhoto}
                 onMarkError={markError}
+                onAssignPartner={assignPartner}
+                onShopifyPush={shopifyPush}
               />
             ))}
           </div>

@@ -46,8 +46,8 @@ Partners (e.g. 3D Devine) log in at their subdomain, manage their print queue, c
 - [x] Filament inventory + low-stock alerts
 - [x] Slicer tab (OrcaSlicer presets, STL/3MF upload)
 - [x] Analytics tab (utilization, material breakdown, slice quality, error rate)
-- [x] Partner assignment — admin assigns orders to specific partners
-- [x] Shopify return channel — push tracking/fulfillment back to Shopify
+- [x] Partner assignment — 👤 button on each card, inline form to assign partner by name/ID
+- [x] Shopify return channel — ⬆ Shopify button on DISPATCH cards, form for tracking number/company/URL + customer email toggle
 - [x] Custom domain per partner (`clientid-partner.platform.fofus.in`)
 - [x] Dark/light theme
 

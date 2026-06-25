@@ -24,13 +24,16 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:4173",
         "https://fofus.in",
         "https://www.fofus.in",
         "https://busienss.fofus.in",
         "https://business.fofus.in",
+        "https://store.fofus.in",
         "https://maker-ai-design-front.vercel.app",
     ],
-    allow_origin_regex=r"https://.*\.vercel\.app|https://.*\.fofus\.in",
+    # *.ts.net covers Tailscale Funnel URLs; *.fofus.in covers all subdomains
+    allow_origin_regex=r"https://.*\.vercel\.app|https://.*\.fofus\.in|https://.*\.ts\.net",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],

@@ -454,55 +454,193 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
 
 // ─── Kanban Column + Card ─────────────────────────────────────────────────────
 
-function KanbanCard({ job, stage, onMove, onCancel }) {
+function KanbanCard({ job, stage, onMove, onMessage, onPhoto, onMarkError }) {
   const T = useT()
   const matColor = MAT_COLOR[job.material] || '#555'
   const [dragOver, setDragOver] = useState(false)
+  const [showMsgs, setShowMsgs] = useState(false)
+  const [msgText, setMsgText] = useState('')
+  const [sending, setSending] = useState(false)
+  const [uploading, setUploading] = useState(false)
+  const [showPhotos, setShowPhotos] = useState(false)
+  const photoRef = useRef(null)
+
+  const jobId = job.id || job.spec_id
+  const messages = job.messages || []
+  const photos = job.photos || []
+  const hasError = !!job.print_error
+  const unread = messages.filter(m => m.from_role === 'admin' && !m.read).length
+
+  const sendMsg = async () => {
+    if (!msgText.trim() || sending) return
+    setSending(true)
+    await onMessage(jobId, msgText)
+    setMsgText('')
+    setSending(false)
+  }
+
+  const handlePhotoFile = async (e) => {
+    const file = e.target.files?.[0]
+    if (!file) return
+    setUploading(true)
+    await onPhoto(jobId, file)
+    e.target.value = ''
+    setUploading(false)
+  }
+
+  const btnBase = {
+    fontSize: 8, padding: '2px 7px', cursor: 'pointer', borderRadius: 3, border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+    background: 'transparent', color: T?.textDim ?? '#444'
+  }
 
   return (
     <div
       draggable
-      onDragStart={e => { e.dataTransfer.setData('jobId', job.id || job.spec_id); e.dataTransfer.setData('fromStage', stage) }}
+      onDragStart={e => { e.dataTransfer.setData('jobId', jobId); e.dataTransfer.setData('fromStage', stage) }}
       style={{
-        background: dragOver ? (T?.cardHover ?? 'rgba(255,255,255,0.04)') : (T?.card ?? 'rgba(255,255,255,0.02)'),
-        border: `1px solid ${T?.border ?? 'rgba(255,255,255,0.06)'}`,
+        background: hasError ? 'rgba(255,68,68,0.04)' : dragOver ? (T?.cardHover ?? 'rgba(255,255,255,0.04)') : (T?.card ?? 'rgba(255,255,255,0.02)'),
+        border: `1px solid ${hasError ? '#ff444430' : (T?.border ?? 'rgba(255,255,255,0.06)')}`,
         borderRadius: 7, padding: '10px 12px', marginBottom: 6, cursor: 'grab',
         transition: 'background 0.1s'
       }}
     >
-      <div style={{ fontSize: 10, color: T?.text ?? '#bbb', fontWeight: 600, marginBottom: 4, fontFamily: 'monospace' }}>
-        {job.name || job.spec_id || job.id}
+      {/* Header */}
+      <div style={{ fontSize: 10, color: T?.text ?? '#bbb', fontWeight: 600, marginBottom: 3, fontFamily: 'monospace', wordBreak: 'break-all' }}>
+        {job.shopify_order && <span style={{ color: '#4a9eff', marginRight: 5 }}>{job.shopify_order}</span>}
+        {job.name || job.spec_id || jobId}
       </div>
-      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+
+      {/* Customer name for Shopify orders */}
+      {job.customer_name && (
+        <div style={{ fontSize: 8, color: T?.textDim ?? '#555', marginBottom: 4 }}>👤 {job.customer_name}</div>
+      )}
+
+      {/* Line items for readymade orders */}
+      {job.source === 'shopify_readymade' && job.line_items?.length > 0 && (
+        <div style={{ fontSize: 8, color: T?.textFaint ?? '#666', marginBottom: 4, lineHeight: 1.5 }}>
+          {job.line_items.map((li, i) => (
+            <div key={i}>• {li.title}{li.qty > 1 ? ` ×${li.qty}` : ''}</div>
+          ))}
+        </div>
+      )}
+
+      {/* Tags */}
+      <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 5 }}>
         <Tag color={matColor}>{job.material || 'PLA'}</Tag>
         {job.qty > 1 && <Tag color="#888">×{job.qty}</Tag>}
         {job.priority === 'high' && <Tag color="#ff4444">!</Tag>}
+        {hasError && <Tag color="#ff4444">⚠ PRINT ERROR</Tag>}
+        {job.source === 'shopify_readymade' && <Tag color="#aa44ff">READYMADE</Tag>}
       </div>
+
       {job.est_time_min && <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', fontFamily: 'monospace' }}>{job.est_time_min}min</div>}
       {job.assigned_printer && <div style={{ fontSize: 8, color: '#4a9eff', marginTop: 2 }}>⬡ {job.assigned_printer}</div>}
-      <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-        {ORDER_STAGES.indexOf(stage) > 0 && (
-          <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) - 1])} style={{
-            fontSize: 8, padding: '2px 6px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
-            color: T?.textDim ?? '#444', cursor: 'pointer', borderRadius: 3
-          }}>←</button>
-        )}
+      {job.total_inr > 0 && <div style={{ fontSize: 8, color: '#00cc66', marginTop: 2 }}>₹{job.total_inr}</div>}
+
+      {/* Action row — no delete button for partners */}
+      <div style={{ display: 'flex', gap: 4, marginTop: 8, flexWrap: 'wrap', alignItems: 'center' }}>
         {ORDER_STAGES.indexOf(stage) < ORDER_STAGES.length - 1 && (
-          <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) + 1])} style={{
-            fontSize: 8, padding: '2px 6px', background: '#00cc6610', border: '1px solid #00cc6620',
-            color: '#00cc66', cursor: 'pointer', borderRadius: 3
-          }}>→</button>
+          <button onClick={() => onMove(jobId, ORDER_STAGES[ORDER_STAGES.indexOf(stage) + 1])} style={{
+            ...btnBase, background: '#00cc6610', border: '1px solid #00cc6620', color: '#00cc66', fontWeight: 700
+          }}>→ Next</button>
         )}
-        <button onClick={() => onCancel(job.id || job.spec_id)} style={{
-          fontSize: 8, padding: '2px 5px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
-          color: T?.textFaint ?? '#2a2a2a', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
-        }}>✕</button>
+
+        {/* Message button */}
+        <button onClick={() => setShowMsgs(v => !v)} style={{
+          ...btnBase, color: unread > 0 ? '#4a9eff' : (T?.textDim ?? '#444'),
+          border: `1px solid ${unread > 0 ? '#4a9eff44' : (T?.border ?? '#1a1a1a')}`,
+          position: 'relative'
+        }}>
+          💬{messages.length > 0 ? ` ${messages.length}` : ''}
+          {unread > 0 && <span style={{
+            position: 'absolute', top: -4, right: -4, background: '#4a9eff',
+            color: '#000', fontSize: 7, borderRadius: '50%', width: 12, height: 12,
+            display: 'flex', alignItems: 'center', justifyContent: 'center', fontWeight: 800
+          }}>{unread}</span>}
+        </button>
+
+        {/* Photo button */}
+        <button onClick={() => { if (photos.length > 0) setShowPhotos(v => !v); else photoRef.current?.click() }}
+          style={{ ...btnBase, color: photos.length > 0 ? '#ff9800' : (T?.textDim ?? '#444') }}>
+          {uploading ? '⏳' : `📷${photos.length > 0 ? ` ${photos.length}` : ''}`}
+        </button>
+        <input ref={photoRef} type="file" accept="image/*" style={{ display: 'none' }} onChange={handlePhotoFile} />
+
+        {/* Mark / clear print error */}
+        <button onClick={() => onMarkError(jobId, !hasError)} style={{
+          ...btnBase,
+          color: hasError ? '#ff4444' : (T?.textFaint ?? '#333'),
+          border: `1px solid ${hasError ? '#ff444430' : (T?.border ?? '#1a1a1a')}`,
+        }}>
+          {hasError ? '⚠ Error' : '⚐ Error?'}
+        </button>
+
+        {/* Upload more photos when panel is open */}
+        {showPhotos && photos.length > 0 && (
+          <button onClick={() => photoRef.current?.click()} style={{ ...btnBase }}>+ Photo</button>
+        )}
       </div>
+
+      {/* Message thread */}
+      {showMsgs && (
+        <div style={{ marginTop: 8, borderTop: `1px solid ${T?.border ?? '#1a1a1a'}`, paddingTop: 8 }}>
+          <div style={{ maxHeight: 120, overflowY: 'auto', marginBottom: 6 }}>
+            {messages.length === 0
+              ? <div style={{ fontSize: 8, color: T?.textFaint ?? '#333' }}>No messages yet</div>
+              : messages.map(m => (
+                <div key={m.id} style={{ marginBottom: 5 }}>
+                  <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 1 }}>
+                    <span style={{ fontSize: 8, fontWeight: 700, color: m.from_role === 'admin' ? '#4a9eff' : '#00cc66' }}>
+                      {m.from_label || m.from_role}
+                    </span>
+                    <span style={{ fontSize: 7, color: T?.textFaint ?? '#333' }}>
+                      {new Date(m.ts).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                    </span>
+                  </div>
+                  <div style={{ fontSize: 9, color: T?.text ?? '#ccc', lineHeight: 1.4 }}>{m.text}</div>
+                </div>
+              ))
+            }
+          </div>
+          <div style={{ display: 'flex', gap: 4 }}>
+            <input
+              value={msgText}
+              onChange={e => setMsgText(e.target.value)}
+              onKeyDown={e => e.key === 'Enter' && sendMsg()}
+              placeholder="Type message…"
+              style={{
+                flex: 1, fontSize: 9, padding: '4px 7px', borderRadius: 4,
+                background: T?.inputBg ?? '#0d0d0d', border: `1px solid ${T?.inputBorder ?? '#1a1a1a'}`,
+                color: T?.text ?? '#ccc', outline: 'none'
+              }}
+            />
+            <button onClick={sendMsg} disabled={sending || !msgText.trim()} style={{
+              ...btnBase, background: '#00cc6612', border: '1px solid #00cc6630', color: '#00cc66', padding: '4px 8px'
+            }}>Send</button>
+          </div>
+        </div>
+      )}
+
+      {/* Photos panel */}
+      {showPhotos && photos.length > 0 && (
+        <div style={{ marginTop: 8, borderTop: `1px solid ${T?.border ?? '#1a1a1a'}`, paddingTop: 8 }}>
+          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
+            {photos.map(p => (
+              <a key={p.id} href={p.data} target="_blank" rel="noreferrer">
+                <img src={p.data} alt={p.filename} style={{
+                  width: 56, height: 56, objectFit: 'cover', borderRadius: 4,
+                  border: `1px solid ${T?.border ?? '#1a1a1a'}`
+                }} />
+              </a>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }
 
-function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop }) {
+function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop, onMessage, onPhoto, onMarkError }) {
   const T = useT()
   const [dragOver, setDragOver] = useState(false)
   const color = ORDER_COLOR[stage] || '#444'
@@ -540,7 +678,9 @@ function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop }) {
         </div>
       ) : (
         jobs.map(job => (
-          <KanbanCard key={job.id || job.spec_id} job={job} stage={stage} onMove={onMove} onCancel={onCancel} />
+          <KanbanCard key={job.id || job.spec_id} job={job} stage={stage}
+            onMove={onMove} onCancel={onCancel}
+            onMessage={onMessage} onPhoto={onPhoto} onMarkError={onMarkError} />
         ))
       )}
     </div>
@@ -1102,6 +1242,38 @@ export default function Dashboard({ darkMode = false }) {
     } catch { /* noop */ }
   }
 
+  // Message / photo / error handlers
+  const addMessage = async (orderId, text) => {
+    try {
+      await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}/messages`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ text, from_role: 'partner', from_label: '3D Devine' })
+      })
+      poll()
+    } catch { /* noop */ }
+  }
+
+  const uploadPhoto = async (orderId, file) => {
+    try {
+      const fd = new FormData()
+      fd.append('file', file)
+      await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}/photos`, {
+        method: 'POST', body: fd
+      })
+      poll()
+    } catch { /* noop */ }
+  }
+
+  const markError = async (orderId, hasError) => {
+    try {
+      await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}/print-error`, {
+        method: 'POST', headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ has_error: hasError })
+      })
+      poll()
+    } catch { /* noop */ }
+  }
+
   // Spool actions
   const deleteSpool = async (spoolId) => {
     try {
@@ -1254,12 +1426,13 @@ export default function Dashboard({ darkMode = false }) {
       </div>
 
       {/* Stats row */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10, marginBottom: 20 }}>
         <StatCard icon="📦" label="Active Orders" value={activeOrders.length || (stats.active_orders ?? '—')} color="#00cc66" sub={`${allOrders.length} total`} />
         <StatCard icon="⬡" label="Printing" value={printing} color="#4a9eff" sub={`${idle} idle · ${printers.length} total`} />
         <StatCard icon="◎" label="Utilization" value={printers.length > 0 ? `${utilization}%` : '—'} color={utilization > 70 ? '#00cc66' : utilization > 40 ? '#ff9800' : '#555'} sub="fleet capacity" />
         <StatCard icon="⚠" label="Flagged" value={alerts.length > 0 ? alerts.length : (stats.flagged ?? 0)} color="#ff9800" sub="needs review" alert={alerts.length > 0} />
         <StatCard icon="✓" label="Success Rate" value={successRate != null ? `${successRate}%` : '—'} color={successRate > 90 ? '#00cc66' : '#ff9800'} sub={`${feedback.length} slices`} />
+        <StatCard icon="🔴" label="Print Errors" value={stats.print_errors ?? allOrders.filter(o => o.print_error).length} color="#ff4444" sub="error volume" alert={(stats.print_errors ?? 0) > 0} />
       </div>
 
       {/* ── OVERVIEW ─────────────────────────────────────────────────────────── */}
@@ -1318,6 +1491,9 @@ export default function Dashboard({ darkMode = false }) {
                 onMove={advanceOrder}
                 onCancel={cancelJob}
                 onDrop={advanceOrder}
+                onMessage={addMessage}
+                onPhoto={uploadPhoto}
+                onMarkError={markError}
               />
             ))}
           </div>
@@ -1478,6 +1654,31 @@ export default function Dashboard({ darkMode = false }) {
                   <MiniBar label="Passed" value={feedback.filter(f => !f.flagged_for_review).length} max={feedback.length} color="#00cc66" unit={` of ${feedback.length}`} />
                   <MiniBar label="Flagged" value={feedback.filter(f => f.flagged_for_review).length} max={feedback.length} color="#ff9800" unit={` of ${feedback.length}`} />
                 </>
+              }
+            </div>
+
+            <SectionHead>Print Error Volume</SectionHead>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
+              {allOrders.length === 0
+                ? <div style={{ fontSize: 10, color: T.textDim }}>No orders yet</div>
+                : (() => {
+                    const errored = allOrders.filter(o => o.print_error)
+                    const errPct = allOrders.length > 0 ? Math.round((errored.length / allOrders.length) * 100) : 0
+                    return <>
+                      <MiniBar label="Print Errors" value={errored.length} max={Math.max(allOrders.length, 1)} color="#ff4444" unit={` of ${allOrders.length} orders`} />
+                      <MiniBar label="Error Rate" value={errPct} max={100} color={errPct > 10 ? '#ff4444' : '#ff9800'} unit="%" />
+                      {errored.length > 0 && (
+                        <div style={{ marginTop: 10 }}>
+                          {errored.slice(0, 5).map((o, i) => (
+                            <div key={i} style={{ fontSize: 9, color: T.textDim, padding: '3px 0', borderBottom: `1px solid ${T.border}` }}>
+                              <span style={{ color: '#ff4444' }}>⚠</span> {o.shopify_order || o.name || o.id}
+                              {o.customer_name && <span style={{ color: T.textFaint, marginLeft: 6 }}>{o.customer_name}</span>}
+                            </div>
+                          ))}
+                        </div>
+                      )}
+                    </>
+                  })()
               }
             </div>
 

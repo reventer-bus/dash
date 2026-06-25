@@ -3,8 +3,9 @@ Farm status, feedback, work orders, filament inventory, and printer actions.
 n8n POSTs slice results here; the dashboard polls GET /status.
 """
 
+import base64
 from datetime import datetime, timezone
-from fastapi import APIRouter
+from fastapi import APIRouter, File, HTTPException, UploadFile
 from pydantic import BaseModel
 from typing import Optional
 from app.services import farm_store
@@ -118,6 +119,68 @@ async def update_order(order_id: str, payload: OrderUpdate):
 async def cancel_order(order_id: str):
     ok = farm_store.cancel_order(order_id)
     return {"ok": ok}
+
+
+# ── Order messages ────────────────────────────────────────────────────────────
+
+class MessagePayload(BaseModel):
+    text: str
+    from_role: str = "partner"   # "partner" | "admin"
+    from_label: Optional[str] = None
+
+
+@router.post("/orders/{order_id}/messages")
+async def add_message(order_id: str, payload: MessagePayload):
+    msg = {
+        "id": f"msg-{int(datetime.now().timestamp() * 1000)}",
+        "text": payload.text,
+        "from_role": payload.from_role,
+        "from_label": payload.from_label or payload.from_role,
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "read": False,
+    }
+    order = farm_store.add_order_message(order_id, msg)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return msg
+
+
+# ── Order photos ──────────────────────────────────────────────────────────────
+
+@router.post("/orders/{order_id}/photos")
+async def upload_photo(order_id: str, file: UploadFile = File(...)):
+    content = await file.read()
+    ext = (file.filename or "img").rsplit(".", 1)[-1].lower()
+    mime = f"image/{ext}" if ext in ("jpg", "jpeg", "png", "gif", "webp") else "image/jpeg"
+    photo = {
+        "id": f"photo-{int(datetime.now().timestamp() * 1000)}",
+        "data": f"data:{mime};base64,{base64.b64encode(content).decode()}",
+        "filename": file.filename or "photo",
+        "ts": datetime.now(timezone.utc).isoformat(),
+        "type": "print_error",
+    }
+    order = farm_store.add_order_photo(order_id, photo)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"id": photo["id"], "ts": photo["ts"], "filename": photo["filename"]}
+
+
+# ── Print error marking ───────────────────────────────────────────────────────
+
+class PrintErrorPayload(BaseModel):
+    has_error: bool = True
+    error_note: Optional[str] = None
+
+
+@router.post("/orders/{order_id}/print-error")
+async def mark_print_error(order_id: str, payload: PrintErrorPayload):
+    updates: dict = {"print_error": payload.has_error}
+    if payload.error_note is not None:
+        updates["error_note"] = payload.error_note
+    order = farm_store.update_order(order_id, updates)
+    if order is None:
+        raise HTTPException(status_code=404, detail="Order not found")
+    return {"ok": True, "print_error": payload.has_error}
 
 
 @router.post("/queue/{job_id}/assign")

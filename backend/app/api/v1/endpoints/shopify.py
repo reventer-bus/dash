@@ -151,19 +151,33 @@ async def _process_order(order: dict):
     customer_name = f"{customer.get('first_name', '')} {customer.get('last_name', '')}".strip()
     note = order.get("note", "")
     total = float(order.get("total_price", 0))
+    line_items_raw = order.get("line_items", [])
 
     # Extract material from line items (SKU: FOFUS-CUSTOM-PLA etc.)
+    # Falls back to PLA for readymade products
     material = "PLA"
-    for item in order.get("line_items", []):
+    for item in line_items_raw:
         sku = (item.get("sku") or "").upper()
         for mat in MATERIAL_VARIANT:
             if mat in sku:
                 material = mat
                 break
 
+    # Build display name: Shopify order number + first product title
+    first_title = line_items_raw[0].get("title", "") if line_items_raw else ""
+    display_name = f"{order_name} — {first_title}" if first_title else order_name
+
+    # Determine if this is a readymade (non-custom) product
+    is_readymade = not any(
+        mat in (li.get("sku") or "").upper()
+        for li in line_items_raw
+        for mat in MATERIAL_VARIANT
+    )
+
     job = {
         "id": f"shopify-{order.get('id')}",
-        "source": "shopify",
+        "name": display_name,
+        "source": "shopify_readymade" if is_readymade else "shopify",
         "shopify_order": order_name,
         "shopify_order_id": order.get("id"),
         "customer_name": customer_name,
@@ -177,13 +191,11 @@ async def _process_order(order: dict):
                 "title": li.get("title"),
                 "sku": li.get("sku"),
                 "qty": li.get("quantity", 1),
-                "shopify_line_item_id": li.get("id"),  # numeric, for fulfillment API
+                "price": li.get("price"),
+                "shopify_line_item_id": li.get("id"),
             }
-            for li in order.get("line_items", [])
+            for li in line_items_raw
         ],
-        # status intentionally NOT set here — add_shopify_order() defaults it to "NEW"
-        # so the dashboard's Kanban pipeline (NEW → AI_PREP → PRINTING → ...) picks it up
-        # assigned_partner: null,  # populated by the partner-assignment step (later phase)
         "ts": order.get("created_at"),
     }
 

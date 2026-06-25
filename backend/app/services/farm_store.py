@@ -97,6 +97,7 @@ def get_status() -> dict:
             "printing":  printing,
             "flagged":   flagged,
             "completed": len([o for o in _orders if o.get("status") in ("DISPATCH", "LOGGED")]),
+            "print_errors": sum(1 for o in _orders if o.get("print_error")),
         },
     }
 
@@ -223,6 +224,26 @@ def assign_job(job_id: str, printer_id: str) -> dict | None:
 
 # ── Shopify orders ────────────────────────────────────────────────────────────
 
+def add_order_message(order_id: str, msg: dict) -> dict | None:
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            o.setdefault("messages", []).append(msg)
+            o["updated_at"] = datetime.now(timezone.utc).isoformat()
+            _rewrite_jsonl(_ORDERS_PATH, _orders)
+            return o
+    return None
+
+
+def add_order_photo(order_id: str, photo: dict) -> dict | None:
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            o.setdefault("photos", []).append(photo)
+            o["updated_at"] = datetime.now(timezone.utc).isoformat()
+            _rewrite_jsonl(_ORDERS_PATH, _orders)
+            return o
+    return None
+
+
 def add_shopify_order(job: dict) -> dict:
     """Accept a Shopify order webhook and push it into the farm queue."""
     job.setdefault("status", "NEW")
@@ -233,6 +254,9 @@ def add_shopify_order(job: dict) -> dict:
     job.setdefault("parcel_code", "")
     job.setdefault("tracking_url", "")
     job.setdefault("history", [])
+    job.setdefault("messages", [])
+    job.setdefault("photos", [])
+    job.setdefault("print_error", False)
     # Avoid duplicates — Shopify may resend webhooks
     existing_ids = {o.get("id") for o in _orders}
     if job.get("id") in existing_ids:

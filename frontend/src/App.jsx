@@ -2,8 +2,8 @@ import { useState, useEffect } from 'react'
 import Dashboard from './Dashboard.jsx'
 
 const CREDENTIALS = {
-  username: import.meta.env.VITE_LOGIN_USER || 'admin',
-  password: import.meta.env.VITE_LOGIN_PASS || 'printdash2024',
+  username: import.meta.env.VITE_LOGIN_USER || '101',
+  password: import.meta.env.VITE_LOGIN_PASS || '101_3DDEVINE',
 }
 
 const SESSION_KEY = 'pd_authed'

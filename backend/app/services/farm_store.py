@@ -219,3 +219,18 @@ def cancel_order(order_id: str) -> bool:
 
 def assign_job(job_id: str, printer_id: str) -> dict | None:
     return update_order(job_id, {"assigned_printer": printer_id, "status": "PRINTING"})
+
+
+# ── Shopify orders ────────────────────────────────────────────────────────────
+
+def add_shopify_order(job: dict) -> dict:
+    """Accept a Shopify order webhook and push it into the farm queue."""
+    job.setdefault("status", "NEW")
+    job.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+    # Avoid duplicates — Shopify may resend webhooks
+    existing_ids = {o.get("id") for o in _orders}
+    if job.get("id") in existing_ids:
+        return job
+    _orders.append(job)
+    _append_jsonl(_ORDERS_PATH, job)
+    return job

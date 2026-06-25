@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing
+from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify
 from app.services import farm_store
 
 
@@ -54,6 +54,9 @@ app.include_router(slicer.router, prefix="/api/v1/slicer", tags=["slicer"])
 
 # Pricing — fofus-quote engine
 app.include_router(pricing.router, prefix="/api/v1/pricing", tags=["pricing"])
+
+# Shopify — checkout + webhook
+app.include_router(shopify.router, prefix="/api/v1/shopify", tags=["shopify"])
 
 
 @app.get("/health")

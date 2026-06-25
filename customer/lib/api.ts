@@ -40,6 +40,23 @@ export interface OrderRequest {
   file_name?: string
 }
 
+export interface ShopifyCheckoutRequest {
+  customer_name: string
+  customer_email: string
+  customer_phone?: string
+  material: string
+  weight_g?: number
+  print_time_min?: number
+  quote_total: number
+  file_name?: string
+  notes?: string
+}
+
+export interface ShopifyCheckoutResponse {
+  draft_order_id: string
+  invoice_url: string
+}
+
 export interface PartnerRequest {
   name: string
   email: string
@@ -71,6 +88,12 @@ export const api = {
 
   createOrder: (body: OrderRequest) =>
     request<{ id: string; status: string }>('/api/v1/orders', {
+      method: 'POST',
+      body: JSON.stringify(body),
+    }),
+
+  createShopifyCheckout: (body: ShopifyCheckoutRequest) =>
+    request<ShopifyCheckoutResponse>('/api/v1/shopify/checkout', {
       method: 'POST',
       body: JSON.stringify(body),
     }),

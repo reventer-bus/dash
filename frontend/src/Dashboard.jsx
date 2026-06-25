@@ -1586,25 +1586,7 @@ export default function Dashboard({ darkMode = false }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 900 }}>
 
           <div>
-                      {isLocalhost && <SectionHead>Backend Connection</SectionHead>}
-                      {isLocalhost && (
-              <div style={{
-                background: 'rgba(255,152,0,0.06)',
-                border: '1px solid rgba(255,152,0,0.2)',
-                borderRadius: 8, padding: '10px 12px', marginBottom: 14
-              }}>
-                <div style={{ fontSize: 9, color: '#ff9800', marginBottom: 6, fontWeight: 600 }}>
-                  ⚠ Not connected — set your Railway URL
-                </div>
-                <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
-                  style={{ width: '100%', background: T.inputBg, border: '1px solid rgba(255,152,0,0.2)', color: T.text, padding: '6px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'monospace' }} />
-                <div style={{ fontSize: 8, color: T.textDim, marginTop: 5, lineHeight: 1.6 }}>
-                  Railway → backend service → Settings → Networking → Public URL
-                </div>
-              </div>
-            )}
-
-            <SectionHead>File</SectionHead>
+                        <SectionHead>File</SectionHead>
             <DropZone file={slicerFile} onFile={setSlicerFile} />
             {slicerFile && (
               <button onClick={() => setSlicerFile(null)} style={{

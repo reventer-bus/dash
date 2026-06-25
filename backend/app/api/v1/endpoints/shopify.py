@@ -163,12 +163,20 @@ async def _process_order(order: dict):
         "id": f"shopify-{order.get('id')}",
         "source": "shopify",
         "shopify_order": order_name,
+        "shopify_order_id": order.get("id"),
         "customer_name": customer_name,
         "customer_email": customer.get("email", ""),
+        "customer_phone": customer.get("phone", ""),
         "material": material,
         "total_inr": total,
         "note": note,
-        "status": "pending",
+        "line_items": [
+            {"title": li.get("title"), "sku": li.get("sku"), "qty": li.get("quantity", 1)}
+            for li in order.get("line_items", [])
+        ],
+        # status intentionally NOT set here — add_shopify_order() defaults it to "NEW"
+        # so the dashboard's Kanban pipeline (NEW → AI_PREP → PRINTING → ...) picks it up
+        # assigned_partner: null,  # populated by the partner-assignment step (later phase)
         "ts": order.get("created_at"),
     }
 

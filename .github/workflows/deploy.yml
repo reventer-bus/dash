@@ -1,34 +1,71 @@
-name: Deploy — Maker AI (fofus.in)
+name: CI — FOFUS
 
 on:
   push:
+    branches: [main, "claude/*"]
+  pull_request:
     branches: [main]
-  workflow_dispatch:
 
 jobs:
-  # Vercel auto-deploys via its GitHub App on every push — no job needed.
-
-  # Railway CLI fallback — activates when RAILWAY_TOKEN secret is set.
-  # Railway's GitHub App also auto-deploys on push if the repo is connected.
-  deploy-backend:
-    name: Backend → Railway
+  # ── Backend lint + import check ──────────────────────────────────────────
+  backend:
+    name: Backend — Python check
     runs-on: ubuntu-latest
-    continue-on-error: true
     steps:
       - uses: actions/checkout@v4
 
-      - name: Install Railway CLI
-        run: npm install -g @railway/cli@latest
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
 
-      - name: Deploy to Railway
-        env:
-          RAILWAY_TOKEN: ${{ secrets.RAILWAY_TOKEN }}
-          RAILWAY_PROJECT_ID: ${{ secrets.RAILWAY_PROJECT_ID }}
-        # Runs from repo root — Dockerfile and railway.toml live here
-        # Skips gracefully if RAILWAY_TOKEN secret is not configured
-        run: |
-          test -n "$RAILWAY_TOKEN" || { echo "RAILWAY_TOKEN not set — skipping"; exit 0; }
-          railway up \
-            ${RAILWAY_PROJECT_ID:+--project $RAILWAY_PROJECT_ID} \
-            --environment production \
-            --detach
+      - name: Install dependencies
+        working-directory: backend
+        run: pip install -r requirements.txt
+
+      - name: Import check
+        working-directory: backend
+        run: python -c "from app.main import app; print('✓ app loaded')"
+
+  # ── Frontend build check ─────────────────────────────────────────────────
+  frontend:
+    name: Frontend — Vite build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: frontend/package-lock.json
+
+      - name: Install & build
+        working-directory: frontend
+        run: npm ci && npm run build
+
+  # ── Customer site type check ─────────────────────────────────────────────
+  customer:
+    name: Customer site — Next.js type check
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+          cache: "npm"
+          cache-dependency-path: customer/package-lock.json
+
+      - name: Install
+        working-directory: customer
+        run: npm install
+
+      - name: Type check
+        working-directory: customer
+        run: npx tsc --noEmit
+
+  # ── Deployment note ──────────────────────────────────────────────────────
+  # Backend: self-hosted on Ubuntu via docker compose up -d (see infrastructure/)
+  # Frontend (partner dashboard): Vercel auto-deploys from this repo on push to main
+  # Customer site: Vercel auto-deploys customer/ directory on push to main
+  # Shopify webhook URL: https://<your-ubuntu-domain>/api/v1/shopify/webhook

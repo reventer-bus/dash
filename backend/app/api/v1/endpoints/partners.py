@@ -1,12 +1,16 @@
 from fastapi import APIRouter, Depends
 from sqlalchemy.ext.asyncio import AsyncSession
 from app.core.database import get_db
+from app.api.v1.endpoints.auth import get_current_partner
 
 router = APIRouter()
 
 
 @router.get("/")
-async def list_partners(db: AsyncSession = Depends(get_db)):
+async def list_partners(
+    db: AsyncSession = Depends(get_db),
+    _user: dict = Depends(get_current_partner),  # require JWT
+):
     return {"partners": []}
 
 

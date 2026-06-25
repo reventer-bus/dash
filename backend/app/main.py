@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer
+from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify
 from app.services import farm_store
 
 
@@ -24,13 +24,16 @@ app.add_middleware(
     allow_origins=[
         "http://localhost:3000",
         "http://localhost:5173",
+        "http://localhost:4173",
         "https://fofus.in",
         "https://www.fofus.in",
         "https://busienss.fofus.in",
         "https://business.fofus.in",
+        "https://store.fofus.in",
         "https://maker-ai-design-front.vercel.app",
     ],
-    allow_origin_regex=r"https://.*\.vercel\.app|https://.*\.fofus\.in",
+    # *.ts.net covers Tailscale Funnel URLs; *.fofus.in covers all subdomains
+    allow_origin_regex=r"https://.*\.vercel\.app|https://.*\.fofus\.in|https://.*\.ts\.net",
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -52,7 +55,36 @@ app.include_router(partners.router, prefix="/api/v1/partners", tags=["partners"]
 app.include_router(farm.router, prefix="/api/v1/farm", tags=["farm"])
 app.include_router(slicer.router, prefix="/api/v1/slicer", tags=["slicer"])
 
+# Pricing — fofus-quote engine
+app.include_router(pricing.router, prefix="/api/v1/pricing", tags=["pricing"])
+
+# Shopify — checkout + webhook
+app.include_router(shopify.router, prefix="/api/v1/shopify", tags=["shopify"])
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "Maker AI API", "business": "fofus.in"}
+
+
+@app.get("/")
+async def root():
+    return {
+        "service": "Maker AI API",
+        "version": "0.1.0",
+        "business": "fofus.in",
+        "docs": "/docs",
+        "openapi": "/openapi.json",
+        "endpoints": [
+            "GET  /health",
+            "GET  /api/v1/pricing/rates",
+            "POST /api/v1/pricing/calculate",
+            "GET  /api/v1/farm/status",
+            "GET  /api/v1/farm/queue",
+            "POST /api/v1/auth/register",
+            "POST /api/v1/auth/login",
+            "GET  /api/v1/auth/me   (requires JWT)",
+            "POST /api/v1/shopify/checkout",
+            "POST /api/v1/shopify/webhook",
+        ],
+    }

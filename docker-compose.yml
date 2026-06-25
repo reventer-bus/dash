@@ -1,85 +1,155 @@
 version: "3.9"
 
+# FOFUS — Ubuntu self-hosted stack
+# Start: docker compose up -d
+# Logs:  docker compose logs -f backend
+# Stop:  docker compose down
+
 services:
+
+  # ── Postgres ────────────────────────────────────────────────────────────────
   postgres:
     image: postgres:15-alpine
+    restart: unless-stopped
     environment:
       POSTGRES_DB: makerai
       POSTGRES_USER: makerai
-      POSTGRES_PASSWORD: ${DB_PASSWORD:-makerai_dev}
-    ports:
-      - "5432:5432"
+      POSTGRES_PASSWORD: ${DB_PASSWORD:?set DB_PASSWORD in .env}
     volumes:
       - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U makerai"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
 
+  # ── Redis ───────────────────────────────────────────────────────────────────
   redis:
     image: redis:7-alpine
-    ports:
-      - "6379:6379"
+    restart: unless-stopped
+    command: redis-server --save 60 1
     volumes:
       - redis_data:/data
+    healthcheck:
+      test: ["CMD", "redis-cli", "ping"]
+      interval: 10s
+      timeout: 3s
+      retries: 5
 
+  # ── MinIO (file storage) ────────────────────────────────────────────────────
   minio:
     image: minio/minio
+    restart: unless-stopped
     command: server /data --console-address ":9001"
     environment:
       MINIO_ROOT_USER: ${MINIO_USER:-makerai}
-      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:-makerai_dev}
+      MINIO_ROOT_PASSWORD: ${MINIO_PASSWORD:?set MINIO_PASSWORD in .env}
     ports:
-      - "9000:9000"
-      - "9001:9001"
+      - "9001:9001"   # MinIO console — access at http://localhost:9001
     volumes:
       - minio_data:/data
 
+  # ── MQTT broker (Mosquitto) — for Pi printer agents ─────────────────────────
+  mosquitto:
+    image: eclipse-mosquitto:2
+    restart: unless-stopped
+    ports:
+      - "1883:1883"   # MQTT (Pi agents on local network)
+      - "9883:9883"   # MQTT over WebSocket
+    volumes:
+      - ./infrastructure/mosquitto.conf:/mosquitto/config/mosquitto.conf:ro
+      - mosquitto_data:/mosquitto/data
+      - mosquitto_logs:/mosquitto/log
+
+  # ── n8n (workflow automation) ───────────────────────────────────────────────
   n8n:
     image: n8nio/n8n:latest
+    restart: unless-stopped
     environment:
-      - N8N_HOST=0.0.0.0
-      - N8N_PORT=5678
-      - N8N_PROTOCOL=http
-      - NODES_EXCLUDE=[]
-      - N8N_RESTRICT_FILE_ACCESS_TO=${MAKER_AI_DIR:-/data}
-      - MAKER_AI_DIR=${MAKER_AI_DIR:-/data}
-      - ORCA_SLICER_PATH=${ORCA_SLICER_PATH:-/opt/OrcaSlicer.AppImage}
-      - ORCA_PROFILES_DIR=${ORCA_PROFILES_DIR:-/opt/orca-profiles}
-    ports:
-      - "5678:5678"
+      N8N_HOST: 0.0.0.0
+      N8N_PORT: 5678
+      N8N_PROTOCOL: http
+      WEBHOOK_URL: ${N8N_WEBHOOK_URL:-http://localhost:5678}
+      MAKER_AI_DIR: /data
+      ORCA_SLICER_PATH: ${ORCA_SLICER_PATH:-/opt/OrcaSlicer.AppImage}
+      ORCA_PROFILES_DIR: ${ORCA_PROFILES_DIR:-/opt/orca-profiles}
     volumes:
       - n8n_data:/home/node/.n8n
       - ${MAKER_AI_DIR:-./pipeline}:/data
+    depends_on:
+      - redis
 
+  # ── FastAPI backend ─────────────────────────────────────────────────────────
   backend:
-    build: ./backend
+    build:
+      context: .
+      dockerfile: Dockerfile
+    restart: unless-stopped
     environment:
-      DATABASE_URL: postgresql+asyncpg://makerai:${DB_PASSWORD:-makerai_dev}@postgres:5432/makerai
+      DATABASE_URL: postgresql+asyncpg://makerai:${DB_PASSWORD}@postgres:5432/makerai
       REDIS_URL: redis://redis:6379
-      SECRET_KEY: ${SECRET_KEY:-dev-secret-change-in-prod}
+      SECRET_KEY: ${SECRET_KEY:?set SECRET_KEY in .env}
       MINIO_ENDPOINT: minio:9000
       MINIO_ACCESS_KEY: ${MINIO_USER:-makerai}
-      MINIO_SECRET_KEY: ${MINIO_PASSWORD:-makerai_dev}
+      MINIO_SECRET_KEY: ${MINIO_PASSWORD}
+      MINIO_BUCKET: ${MINIO_BUCKET:-makerai-files}
+      MINIO_SECURE: "false"
+      MAKER_AI_DIR: /tmp/maker-ai
+      ANTHROPIC_API_KEY: ${ANTHROPIC_API_KEY:-}
+      # Shopify integration (store.fofus.in)
+      SHOPIFY_DOMAIN: ${SHOPIFY_DOMAIN:-store.fofus.in}
+      SHOPIFY_ADMIN_TOKEN: ${SHOPIFY_ADMIN_TOKEN:-}
+      SHOPIFY_WEBHOOK_SECRET: ${SHOPIFY_WEBHOOK_SECRET:-}
+      # MQTT — talk to Pi printer agents
+      MQTT_HOST: mosquitto
+      MQTT_PORT: 1883
     ports:
-      - "8000:8000"
+      - "8000:8000"   # Exposed to nginx
     depends_on:
-      - postgres
-      - redis
-      - minio
-    volumes:
-      - ./backend:/app
+      postgres:
+        condition: service_healthy
+      redis:
+        condition: service_healthy
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 5s
+      retries: 5
 
+  # ── Partner dashboard (Vite build → nginx static on :80 inside container) ────
   frontend:
     build:
       context: ./frontend
       args:
-        - VITE_N8N_URL=http://n8n:5678
-        - VITE_API_URL=http://backend:8000
+        VITE_API_URL: ${VITE_API_URL:-http://localhost:8000}
+    restart: unless-stopped
+    # nginx inside the container listens on 80; we expose it on host port 4173
     ports:
-      - "5173:5173"
+      - "4173:80"
+    depends_on:
+      backend:
+        condition: service_healthy
+
+  # ── Nginx reverse proxy ──────────────────────────────────────────────────────
+  # TLS is handled by Tailscale Funnel — nginx only needs port 80
+  # Run: tailscale funnel 80   (exposes https://<hostname>.ts.net publicly)
+  nginx:
+    image: nginx:alpine
+    restart: unless-stopped
+    ports:
+      - "80:80"
+    volumes:
+      - ./infrastructure/nginx.conf:/etc/nginx/nginx.conf:ro
+      - nginx_logs:/var/log/nginx
     depends_on:
       - backend
-      - n8n
+      - frontend
 
 volumes:
   postgres_data:
   redis_data:
   minio_data:
+  mosquitto_data:
+  mosquitto_logs:
   n8n_data:
+  nginx_logs:

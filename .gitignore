@@ -18,6 +18,11 @@ build/
 .env.production
 *.env
 
+# Allow the project's frontend .env.production (public URL, not a secret)
+# so Vercel picks up VITE_API_URL etc at build time.
+# Override the line above for this specific file.
+!frontend/.env.production
+
 # Next.js
 .next/
 out/

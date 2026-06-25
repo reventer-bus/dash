@@ -1,0 +1,253 @@
+{
+  "name": "Maker AI \u2014 Farm Intake",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "farm-intake",
+        "responseMode": "responseNode",
+        "options": {
+          "binaryPropertyName": "data"
+        }
+      },
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2.1,
+      "position": [
+        -592,
+        144
+      ],
+      "id": "04150a16-51e3-4418-be80-89240b1f42b7",
+      "name": "Webhook",
+      "webhookId": "0f82740a-acd7-4ac6-a8b0-36c291cb633c"
+    },
+    {
+      "parameters": {
+        "command": "${ORCA_SLICER_PATH} --slice 0 --export-3mf ${MAKER_AI_DIR}/spec/sliced_output.3mf --load-settings \"${ORCA_PROFILES_DIR}/squashfs-root/resources/profiles/BBL/machine/Bambu Lab A1 0.4 nozzle.json;${ORCA_PROFILES_DIR}/squashfs-root/resources/profiles/BBL/process/0.20mm Standard @BBL A1.json\" --load-filaments \"${ORCA_PROFILES_DIR}/squashfs-root/resources/profiles/BBL/filament/Generic PLA @BBL A1.json\" ${MAKER_AI_DIR}/spec/incoming.3mf"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        -160,
+        144
+      ],
+      "id": "9fe69125-f8ba-4f06-8d60-2a8fd42fa29e",
+      "name": "Execute Command"
+    },
+    {
+      "parameters": {
+        "command": "rm -f ${MAKER_AI_DIR}/spec/sliced_output.3mf && ${ORCA_SLICER_PATH} --slice 0 --export-3mf ${MAKER_AI_DIR}/spec/sliced_output.3mf --load-settings \"${ORCA_PROFILES_DIR}/squashfs-root/resources/profiles/BBL/machine/Bambu Lab A1 0.4 nozzle.json;${ORCA_PROFILES_DIR}/squashfs-root/resources/profiles/BBL/process/0.20mm Standard @BBL A1.json\" --load-filaments \"${ORCA_PROFILES_DIR}/squashfs-root/resources/profiles/BBL/filament/Generic PLA @BBL A1.json\" ${MAKER_AI_DIR}/spec/gridfinity_bin.stl && python3 -c \"import zipfile, re, json, math; z = zipfile.ZipFile('${MAKER_AI_DIR}/spec/sliced_output.3mf'); data = z.read('Metadata/slice_info.config').decode(); prediction = re.search(r'key=\\\"prediction\\\" value=\\\"(\\d+)\\\"', data); length_match = re.search(r'used_m=\\\"([\\d.]+)\\\"', data); length_mm = float(length_match.group(1)) * 1000 if length_match else None; weight_g = round((length_mm * math.pi * (1.75/2)**2 / 1000) * 1.24, 2) if length_mm else None; result = {'actual_time_seconds': int(prediction.group(1)) if prediction else None, 'actual_weight_grams': weight_g}; print(json.dumps(result))\""
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        16,
+        144
+      ],
+      "id": "dc10432f-59ec-4204-8cc3-fa18d985bcdf",
+      "name": "Execute Command1",
+      "alwaysOutputData": true
+    },
+    {
+      "parameters": {
+        "operation": "write",
+        "fileName": "${MAKER_AI_DIR}/spec/incoming.3mf",
+        "dataPropertyName": "data0",
+        "options": {}
+      },
+      "type": "n8n-nodes-base.readWriteFile",
+      "typeVersion": 1.1,
+      "position": [
+        -352,
+        144
+      ],
+      "id": "765ab326-0029-473e-a482-697949563410",
+      "name": "Read/Write Files from Disk"
+    },
+    {
+      "parameters": {
+        "options": {}
+      },
+      "type": "n8n-nodes-base.respondToWebhook",
+      "typeVersion": 1.5,
+      "position": [
+        432,
+        144
+      ],
+      "id": "c061d100-c597-4510-b445-75c2a65d1ba2",
+      "name": "Respond to Webhook"
+    },
+    {
+      "parameters": {
+        "jsCode": "const stdout = $input.first().json.stdout;\nconst result = JSON.parse(stdout.trim().split('\\n').pop());\n\nconst body = $('Webhook').first().json.body;\nconst claimed_time = body.claimed_time_seconds;\nconst claimed_weight = body.claimed_weight_grams;\n\nconst time_diff = Math.abs((result.actual_time_seconds - claimed_time) / claimed_time);\nconst weight_diff = Math.abs((result.actual_weight_grams - claimed_weight) / claimed_weight);\n\nreturn [{\n  json: {\n    spec_id: body.spec_id || 'unknown',\n    spec_version: body.spec_version || 'v0',\n    material: body.material || 'unknown',\n    qty: body.qty || 1,\n    machine_class: body.machine_class || 'unknown',\n    actual_time_seconds: result.actual_time_seconds,\n    actual_weight_grams: result.actual_weight_grams,\n    claimed_time_seconds: claimed_time,\n    claimed_weight_grams: claimed_weight,\n    flagged_for_review: time_diff > 0.10 || weight_diff > 0.10\n  }\n}];"
+      },
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        256,
+        144
+      ],
+      "id": "cd2cc819-8947-4ff7-b4ce-383297e1c642",
+      "name": "Code in JavaScript"
+    },
+    {
+      "parameters": {
+        "command": "=echo '{{ JSON.stringify($json) }}' >> ${MAKER_AI_DIR}/spec/orders.jsonl"
+      },
+      "type": "n8n-nodes-base.executeCommand",
+      "typeVersion": 1,
+      "position": [
+        448,
+        304
+      ],
+      "id": "86efc6ce-57b4-42fd-8d19-cef6ddd689ec",
+      "name": "Execute Command2"
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.MAKER_AI_API_URL || \"http://localhost:8000\" }}/api/v1/farm/feedback",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            {
+              "name": "spec_id",
+              "value": "={{ $json.spec_id }}"
+            },
+            {
+              "name": "spec_version",
+              "value": "={{ $json.spec_version }}"
+            },
+            {
+              "name": "material",
+              "value": "={{ $json.material }}"
+            },
+            {
+              "name": "qty",
+              "value": "={{ $json.qty }}"
+            },
+            {
+              "name": "machine_class",
+              "value": "={{ $json.machine_class }}"
+            },
+            {
+              "name": "actual_time_seconds",
+              "value": "={{ $json.actual_time_seconds }}"
+            },
+            {
+              "name": "actual_weight_grams",
+              "value": "={{ $json.actual_weight_grams }}"
+            },
+            {
+              "name": "claimed_time_seconds",
+              "value": "={{ $json.claimed_time_seconds }}"
+            },
+            {
+              "name": "claimed_weight_grams",
+              "value": "={{ $json.claimed_weight_grams }}"
+            },
+            {
+              "name": "flagged_for_review",
+              "value": "={{ $json.flagged_for_review }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true
+            }
+          }
+        }
+      },
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        448,
+        460
+      ],
+      "id": "a1b2c3d4-0000-0000-0000-111122223333",
+      "name": "POST to Dashboard API"
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Execute Command": {
+      "main": [
+        [
+          {
+            "node": "Execute Command1",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Execute Command1": {
+      "main": [
+        [
+          {
+            "node": "Code in JavaScript",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Webhook": {
+      "main": [
+        [
+          {
+            "node": "Read/Write Files from Disk",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Read/Write Files from Disk": {
+      "main": [
+        [
+          {
+            "node": "Execute Command",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Code in JavaScript": {
+      "main": [
+        [
+          {
+            "node": "Respond to Webhook",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "Execute Command2",
+            "type": "main",
+            "index": 0
+          },
+          {
+            "node": "POST to Dashboard API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "availableInMCP": false
+  },
+  "versionId": "1c54f5f4-72f5-452d-aacf-e299fdfbac71",
+  "meta": {
+    "instanceId": "3ce2f26b250186ee867f82c35f2e532d9c960f97f4a3256645b410b7ea7fc92d"
+  },
+  "nodeGroups": [],
+  "id": "kYQfpFz7d51itOTN",
+  "tags": []
+}

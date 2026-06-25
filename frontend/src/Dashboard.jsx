@@ -1193,27 +1193,6 @@ export default function Dashboard({ darkMode = false }) {
         ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 2px }
       `}</style>
 
-      {/* API URL bar */}
-      {isLocalhost && (
-        <div style={{
-          background: 'rgba(255,152,0,0.06)', border: '1px solid rgba(255,152,0,0.2)',
-          borderRadius: 8, padding: '10px 14px', marginBottom: 14,
-          display: 'flex', alignItems: 'center', gap: 10
-        }}>
-          <span style={{ fontSize: 11, flexShrink: 0 }}>⚠</span>
-          <span style={{ fontSize: 9, color: '#ff9800', flexShrink: 0 }}>BACKEND URL</span>
-          <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
-            style={{ flex: 1, background: T.inputBg, border: '1px solid rgba(255,152,0,0.2)', color: T.text, padding: '5px 10px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace' }} />
-        </div>
-      )}
-      {!isLocalhost && (
-        <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 9, color: T.textFaint }}>API:</span>
-          <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)}
-            style={{ width: 280, background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, color: T.textFaint, padding: '2px 4px', fontSize: 9, fontFamily: 'monospace' }} />
-        </div>
-      )}
-
       {/* Alert banner */}
       {alerts.length > 0 && (
         <div onClick={() => setAlertsOpen(v => !v)} style={{
@@ -1607,21 +1586,23 @@ export default function Dashboard({ darkMode = false }) {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20, maxWidth: 900 }}>
 
           <div>
-            <SectionHead>Backend Connection</SectionHead>
-            <div style={{
-              background: isLocalhost ? 'rgba(255,152,0,0.06)' : 'rgba(0,255,136,0.04)',
-              border: `1px solid ${isLocalhost ? 'rgba(255,152,0,0.2)' : 'rgba(0,255,136,0.1)'}`,
-              borderRadius: 8, padding: '10px 12px', marginBottom: 14
-            }}>
-              <div style={{ fontSize: 9, color: isLocalhost ? '#ff9800' : '#00cc66', marginBottom: 6, fontWeight: 600 }}>
-                {isLocalhost ? '⚠ Not connected — set your Railway URL' : '✓ Connected'}
+                      {isLocalhost && <SectionHead>Backend Connection</SectionHead>}
+                      {isLocalhost && (
+              <div style={{
+                background: 'rgba(255,152,0,0.06)',
+                border: '1px solid rgba(255,152,0,0.2)',
+                borderRadius: 8, padding: '10px 12px', marginBottom: 14
+              }}>
+                <div style={{ fontSize: 9, color: '#ff9800', marginBottom: 6, fontWeight: 600 }}>
+                  ⚠ Not connected — set your Railway URL
+                </div>
+                <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
+                  style={{ width: '100%', background: T.inputBg, border: '1px solid rgba(255,152,0,0.2)', color: T.text, padding: '6px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'monospace' }} />
+                <div style={{ fontSize: 8, color: T.textDim, marginTop: 5, lineHeight: 1.6 }}>
+                  Railway → backend service → Settings → Networking → Public URL
+                </div>
               </div>
-              <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
-                style={{ width: '100%', background: T.inputBg, border: `1px solid ${isLocalhost ? 'rgba(255,152,0,0.2)' : 'rgba(0,204,102,0.15)'}`, color: T.text, padding: '6px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'monospace' }} />
-              <div style={{ fontSize: 8, color: T.textDim, marginTop: 5, lineHeight: 1.6 }}>
-                Railway → backend service → Settings → Networking → Public URL
-              </div>
-            </div>
+            )}
 
             <SectionHead>File</SectionHead>
             <DropZone file={slicerFile} onFile={setSlicerFile} />

@@ -1,23 +1,26 @@
-import { useState, useEffect, useCallback, useRef } from 'react'
+import { useState, useEffect, useCallback, useRef, createContext, useContext } from 'react'
+
+const ThemeCtx = createContext(null)
+const useT = () => useContext(ThemeCtx)
 
 const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
 
 const STATUS_COLOR = {
-  printing: '#00ff88', idle: '#4a9eff', paused: '#ff9800',
+  printing: '#00cc66', idle: '#4a9eff', paused: '#ff9800',
   error: '#ff4444', offline: '#333', slicing: '#aa44ff', warming: '#ff9800'
 }
 
 const ORDER_STAGES = ['NEW', 'AI_PREP', 'PRINTING', 'POST_PROCESS', 'QC', 'PACK', 'DISPATCH']
 const ORDER_COLOR = {
-  NEW: '#555', AI_PREP: '#4a9eff', PRINTING: '#00ff88',
-  POST_PROCESS: '#ff9800', QC: '#aa44ff', PACK: '#ff9800', DISPATCH: '#00ff88'
+  NEW: '#555', AI_PREP: '#4a9eff', PRINTING: '#00cc66',
+  POST_PROCESS: '#ff9800', QC: '#aa44ff', PACK: '#ff9800', DISPATCH: '#00cc66'
 }
 const ORDER_ICON = {
   NEW: '○', AI_PREP: '◎', PRINTING: '⬡', POST_PROCESS: '⚙',
   QC: '◈', PACK: '□', DISPATCH: '✓'
 }
 
-const MAT_COLOR = { PLA: '#00ff88', PETG: '#4a9eff', ABS: '#ff9800', TPU: '#aa44ff', ASA: '#ff6644', NYLON: '#ffcc00', 'PLA-CF': '#88ff44', 'PA-CF': '#ff88aa' }
+const MAT_COLOR = { PLA: '#00cc66', PETG: '#4a9eff', ABS: '#ff9800', TPU: '#aa44ff', ASA: '#ff6644', NYLON: '#ffcc00', 'PLA-CF': '#88ff44', 'PA-CF': '#ff88aa' }
 
 // ─── Slicer constants ─────────────────────────────────────────────────────────
 
@@ -61,23 +64,25 @@ function Tag({ children, color = '#555', bg }) {
 }
 
 function SectionHead({ children, action }) {
+  const T = useT()
   return (
     <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 12 }}>
-      <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700 }}>{children}</div>
+      <div style={{ fontSize: 9, color: T?.textDim ?? '#333', textTransform: 'uppercase', letterSpacing: '0.12em', fontWeight: 700 }}>{children}</div>
       {action}
     </div>
   )
 }
 
 function EmptyState({ icon = '○', title, hint }) {
+  const T = useT()
   return (
     <div style={{
-      border: '1px dashed rgba(255,255,255,0.05)', borderRadius: 8,
+      border: `1px dashed ${T?.border ?? 'rgba(255,255,255,0.05)'}`, borderRadius: 8,
       padding: '32px 16px', textAlign: 'center'
     }}>
       <div style={{ fontSize: 24, marginBottom: 8, opacity: 0.15 }}>{icon}</div>
-      <div style={{ fontSize: 11, color: '#333', marginBottom: 4 }}>{title}</div>
-      {hint && <div style={{ fontSize: 9, color: '#222', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{hint}</div>}
+      <div style={{ fontSize: 11, color: T?.textDim ?? '#333', marginBottom: 4 }}>{title}</div>
+      {hint && <div style={{ fontSize: 9, color: T?.textFaint ?? '#222', lineHeight: 1.7, whiteSpace: 'pre-line' }}>{hint}</div>}
     </div>
   )
 }
@@ -87,40 +92,43 @@ function PulsingDot({ color, size = 8 }) {
     <span style={{ position: 'relative', display: 'inline-block', width: size, height: size, flexShrink: 0 }}>
       <span style={{
         position: 'absolute', inset: 0, borderRadius: '50%', background: color,
-        animation: color === '#00ff88' ? 'pulse 2s infinite' : 'none'
+        animation: color === '#00cc66' ? 'pulse 2s infinite' : 'none'
       }} />
     </span>
   )
 }
 
 function Pill({ value, label, color = '#888' }) {
+  const T = useT()
   return (
     <div style={{ textAlign: 'center' }}>
-      <div style={{ fontSize: 9, color: '#2a2a2a', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
+      <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', marginBottom: 2, textTransform: 'uppercase', letterSpacing: '0.08em' }}>{label}</div>
       <div style={{ fontSize: 12, fontFamily: 'monospace', color, fontWeight: 600 }}>{value ?? '—'}</div>
     </div>
   )
 }
 
-function ProgressBar({ pct, color = '#00ff88', height = 3 }) {
+function ProgressBar({ pct, color = '#00cc66', height = 3 }) {
+  const T = useT()
   return (
-    <div style={{ height, background: '#111', borderRadius: height }}>
+    <div style={{ height, background: T?.inputBg ?? '#111', borderRadius: height }}>
       <div style={{ width: `${Math.min(100, pct || 0)}%`, height: '100%', background: color, borderRadius: height, transition: 'width 0.5s' }} />
     </div>
   )
 }
 
 function StatCard({ label, value, sub, color = '#fff', icon, alert }) {
+  const T = useT()
   return (
     <div style={{
-      background: alert ? 'rgba(255,68,68,0.04)' : 'rgba(255,255,255,0.02)',
-      border: `1px solid ${alert ? '#ff444422' : 'rgba(255,255,255,0.06)'}`,
+      background: alert ? 'rgba(255,68,68,0.06)' : (T?.card ?? 'rgba(255,255,255,0.02)'),
+      border: `1px solid ${alert ? '#ff444422' : (T?.border ?? 'rgba(255,255,255,0.06)')}`,
       borderRadius: 10, padding: '14px', position: 'relative', overflow: 'hidden'
     }}>
       <div style={{ position: 'absolute', top: 10, right: 12, fontSize: 18, opacity: 0.1 }}>{icon}</div>
-      <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 5 }}>{label}</div>
+      <div style={{ fontSize: 9, color: T?.textDim ?? '#333', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 5 }}>{label}</div>
       <div style={{ fontSize: 26, fontWeight: 800, fontFamily: 'monospace', color, lineHeight: 1 }}>{value ?? '—'}</div>
-      {sub && <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 5 }}>{sub}</div>}
+      {sub && <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', marginTop: 5 }}>{sub}</div>}
     </div>
   )
 }
@@ -128,11 +136,12 @@ function StatCard({ label, value, sub, color = '#fff', icon, alert }) {
 // ─── Printer Card ──────────────────────────────────────────────────────────────
 
 function PrinterCard({ printer, onAction, onLivePoll, connType }) {
+  const T = useT()
   const color = STATUS_COLOR[printer.status] || '#555'
   const pct = printer.progress_pct ?? 0
   const maintenanceHours = printer.hours_since_maintenance
-  const maintColor = maintenanceHours == null ? '#333'
-    : maintenanceHours > 200 ? '#ff4444' : maintenanceHours > 100 ? '#ff9800' : '#00ff88'
+  const maintColor = maintenanceHours == null ? (T?.textDim ?? '#333')
+    : maintenanceHours > 200 ? '#ff4444' : maintenanceHours > 100 ? '#ff9800' : '#00cc66'
   const [polling, setPolling] = useState(false)
 
   const doLivePoll = async () => {
@@ -143,14 +152,14 @@ function PrinterCard({ printer, onAction, onLivePoll, connType }) {
 
   return (
     <div style={{
-      background: 'rgba(255,255,255,0.015)', border: `1px solid ${color}1a`,
+      background: T?.card ?? 'rgba(255,255,255,0.015)', border: `1px solid ${color}1a`,
       borderRadius: 8, padding: '12px 14px', marginBottom: 8
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
           <PulsingDot color={color} />
-          <span style={{ fontSize: 12, color: '#ddd', fontWeight: 600 }}>{printer.name}</span>
-          {printer.model && <span style={{ fontSize: 9, color: '#333' }}>{printer.model}</span>}
+          <span style={{ fontSize: 12, color: T?.text ?? '#ddd', fontWeight: 600 }}>{printer.name}</span>
+          {printer.model && <span style={{ fontSize: 9, color: T?.textDim ?? '#333' }}>{printer.model}</span>}
           {connType && connType !== 'manual' && (
             <Tag color="#4a9eff">{connType}</Tag>
           )}
@@ -160,40 +169,40 @@ function PrinterCard({ printer, onAction, onLivePoll, connType }) {
           {connType && connType !== 'manual' && (
             <button onClick={doLivePoll} disabled={polling} style={{
               fontSize: 9, padding: '2px 8px', background: '#4a9eff12', border: '1px solid #4a9eff30',
-              color: polling ? '#333' : '#4a9eff', cursor: polling ? 'default' : 'pointer', borderRadius: 3
+              color: polling ? (T?.textDim ?? '#333') : '#4a9eff', cursor: polling ? 'default' : 'pointer', borderRadius: 3
             }}>{polling ? '...' : '↻ Live'}</button>
           )}
           {printer.status === 'printing' && (
             <button onClick={() => onAction(printer.id, 'pause')} style={{
               fontSize: 9, padding: '2px 8px', background: 'transparent',
-              border: '1px solid #222', color: '#555', cursor: 'pointer', borderRadius: 3
+              border: `1px solid ${T?.border ?? '#222'}`, color: T?.textDim ?? '#555', cursor: 'pointer', borderRadius: 3
             }}>⏸</button>
           )}
           {printer.status === 'paused' && (
             <button onClick={() => onAction(printer.id, 'resume')} style={{
-              fontSize: 9, padding: '2px 8px', background: '#00ff8812',
-              border: '1px solid #00ff8830', color: '#00ff88', cursor: 'pointer', borderRadius: 3
+              fontSize: 9, padding: '2px 8px', background: '#00cc6612',
+              border: '1px solid #00cc6630', color: '#00cc66', cursor: 'pointer', borderRadius: 3
             }}>▶</button>
           )}
         </div>
       </div>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginBottom: 10, padding: '8px', background: 'rgba(0,0,0,0.3)', borderRadius: 6 }}>
-        <Pill label="Nozzle" value={printer.nozzle_temp != null ? `${printer.nozzle_temp}°` : '—'} color={printer.nozzle_temp > 150 ? '#ff9800' : '#555'} />
-        <Pill label="Bed" value={printer.bed_temp != null ? `${printer.bed_temp}°` : '—'} color={printer.bed_temp > 40 ? '#ff9800' : '#555'} />
-        <Pill label="Progress" value={printer.status === 'printing' ? `${pct}%` : '—'} color="#00ff88" />
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 4, marginBottom: 10, padding: '8px', background: T?.sectionBg ?? 'rgba(0,0,0,0.2)', borderRadius: 6 }}>
+        <Pill label="Nozzle" value={printer.nozzle_temp != null ? `${printer.nozzle_temp}°` : '—'} color={printer.nozzle_temp > 150 ? '#ff9800' : (T?.textDim ?? '#555')} />
+        <Pill label="Bed" value={printer.bed_temp != null ? `${printer.bed_temp}°` : '—'} color={printer.bed_temp > 40 ? '#ff9800' : (T?.textDim ?? '#555')} />
+        <Pill label="Progress" value={printer.status === 'printing' ? `${pct}%` : '—'} color="#00cc66" />
         <Pill label="Maint" value={maintenanceHours != null ? `${maintenanceHours}h` : '—'} color={maintColor} />
       </div>
       {printer.current_job && (
-        <div style={{ fontSize: 9, color: '#444', fontFamily: 'monospace', marginBottom: 8 }}>
+        <div style={{ fontSize: 9, color: T?.textDim ?? '#444', fontFamily: 'monospace', marginBottom: 8 }}>
           ⬡ {printer.current_job}
           {printer.layer_num && printer.total_layers && (
-            <span style={{ color: '#2a2a2a', marginLeft: 8 }}>Layer {printer.layer_num}/{printer.total_layers}</span>
+            <span style={{ color: T?.textFaint ?? '#2a2a2a', marginLeft: 8 }}>Layer {printer.layer_num}/{printer.total_layers}</span>
           )}
         </div>
       )}
       {printer.status === 'printing' && <ProgressBar pct={pct} color={color} />}
       {printer.eta_minutes != null && printer.status === 'printing' && (
-        <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 4, textAlign: 'right' }}>
+        <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', marginTop: 4, textAlign: 'right' }}>
           ETA {printer.eta_minutes}min
         </div>
       )}
@@ -204,6 +213,7 @@ function PrinterCard({ printer, onAction, onLivePoll, connType }) {
 // ─── Connect Printer Form ─────────────────────────────────────────────────────
 
 function ConnectPrinterForm({ onSave, onCancel, base }) {
+  const T = useT()
   const [form, setForm] = useState({
     id: '', name: '', model: '', connection_type: 'manual',
     host: '', serial: '', access_code: '', api_key: '', material_type: 'PLA'
@@ -230,30 +240,30 @@ function ConnectPrinterForm({ onSave, onCancel, base }) {
   }
 
   const inp = {
-    background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
-    color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
+    background: T?.inputBg ?? '#0d0d0d', border: `1px solid ${T?.inputBorder ?? 'rgba(255,255,255,0.07)'}`,
+    color: T?.text ?? '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
     fontFamily: 'monospace', width: '100%'
   }
 
   return (
-    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.08)', borderRadius: 10, padding: 18, marginBottom: 20 }}>
+    <div style={{ background: T?.card ?? 'rgba(255,255,255,0.02)', border: `1px solid ${T?.border ?? 'rgba(255,255,255,0.08)'}`, borderRadius: 10, padding: 18, marginBottom: 20 }}>
       <SectionHead>Connect New Printer</SectionHead>
 
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>ID (unique key)</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>ID (unique key)</div>
           <input value={form.id} onChange={e => set('id', e.target.value)} placeholder="bambu-x1c-1" style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Display Name</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>Display Name</div>
           <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="Bambu X1C #1" style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Model</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>Model</div>
           <input value={form.model} onChange={e => set('model', e.target.value)} placeholder="BambuX1C" style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Default Material</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>Default Material</div>
           <select value={form.material_type} onChange={e => set('material_type', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
             {SLICER_MATS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
@@ -261,27 +271,27 @@ function ConnectPrinterForm({ onSave, onCancel, base }) {
       </div>
 
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 9, color: '#444', marginBottom: 6 }}>Connection Type</div>
+        <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 6 }}>Connection Type</div>
         <div style={{ display: 'flex', gap: 6, flexWrap: 'wrap' }}>
           {CONN_TYPES.map(c => (
             <button key={c.value} onClick={() => set('connection_type', c.value)} style={{
               padding: '5px 12px', fontSize: 9, cursor: 'pointer', borderRadius: 5, fontWeight: 600,
-              background: ct === c.value ? '#00ff8815' : 'transparent',
-              color: ct === c.value ? '#00ff88' : '#2a2a2a',
-              border: ct === c.value ? '1px solid #00ff8830' : '1px solid #1a1a1a',
+              background: ct === c.value ? '#00cc6615' : 'transparent',
+              color: ct === c.value ? '#00cc66' : (T?.textFaint ?? '#2a2a2a'),
+              border: ct === c.value ? '1px solid #00cc6630' : `1px solid ${T?.border ?? '#1a1a1a'}`,
             }}>
               {c.label}
             </button>
           ))}
         </div>
-        <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 5 }}>
+        <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', marginTop: 5 }}>
           {CONN_TYPES.find(c => c.value === ct)?.hint}
         </div>
       </div>
 
       {ct !== 'manual' && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>
             {ct === 'bambu' ? 'Printer IP Address' : 'Host URL (e.g. http://192.168.1.50)'}
           </div>
           <input value={form.host} onChange={e => set('host', e.target.value)}
@@ -292,12 +302,12 @@ function ConnectPrinterForm({ onSave, onCancel, base }) {
       {ct === 'bambu' && (
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10, marginBottom: 10 }}>
           <div>
-            <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Device Serial Number</div>
+            <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>Device Serial Number</div>
             <input value={form.serial} onChange={e => set('serial', e.target.value)}
               placeholder="01P00A123456789" style={inp} />
           </div>
           <div>
-            <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>Access Code (from screen)</div>
+            <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>Access Code (from screen)</div>
             <input value={form.access_code} onChange={e => set('access_code', e.target.value)}
               type="password" placeholder="12345678" style={inp} />
           </div>
@@ -306,7 +316,7 @@ function ConnectPrinterForm({ onSave, onCancel, base }) {
 
       {ct === 'octoprint' && (
         <div style={{ marginBottom: 10 }}>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 4 }}>OctoPrint API Key</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 4 }}>OctoPrint API Key</div>
           <input value={form.api_key} onChange={e => set('api_key', e.target.value)}
             type="password" placeholder="A1B2C3D4..." style={inp} />
         </div>
@@ -330,12 +340,12 @@ function ConnectPrinterForm({ onSave, onCancel, base }) {
 
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={handleSave} disabled={saving} style={{
-          flex: 1, padding: '8px', background: saving ? '#111' : '#00ff88', color: saving ? '#333' : '#000',
+          flex: 1, padding: '8px', background: saving ? (T?.inputBg ?? '#111') : '#00cc66', color: saving ? (T?.textDim ?? '#333') : '#000',
           border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: saving ? 'default' : 'pointer'
         }}>{saving ? 'Connecting...' : '+ Add Printer'}</button>
         <button onClick={onCancel} style={{
-          padding: '8px 14px', background: 'transparent', border: '1px solid #1a1a1a',
-          color: '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
+          padding: '8px 14px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+          color: T?.textDim ?? '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
         }}>Cancel</button>
       </div>
     </div>
@@ -345,6 +355,7 @@ function ConnectPrinterForm({ onSave, onCancel, base }) {
 // ─── Queue Card ────────────────────────────────────────────────────────────────
 
 function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
+  const T = useT()
   const matColor = MAT_COLOR[job.material] || '#555'
   const [assigning, setAssigning] = useState(false)
   const idlePrinters = printers.filter(p => p.status === 'idle')
@@ -355,12 +366,12 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
 
   return (
     <div style={{
-      background: 'rgba(255,255,255,0.015)', border: '1px solid rgba(255,255,255,0.06)',
+      background: T?.card ?? 'rgba(255,255,255,0.015)', border: `1px solid ${T?.border ?? 'rgba(255,255,255,0.06)'}`,
       borderRadius: 8, padding: '12px 14px', marginBottom: 8
     }}>
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: 11, color: '#ccc', fontFamily: 'monospace', fontWeight: 600, marginBottom: 3 }}>
+          <div style={{ fontSize: 11, color: T?.text ?? '#ccc', fontFamily: 'monospace', fontWeight: 600, marginBottom: 3 }}>
             {job.name || job.spec_id || job.id || 'job'}
           </div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap' }}>
@@ -371,8 +382,8 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
           </div>
         </div>
         <div style={{ textAlign: 'right' }}>
-          {job.est_time_min && <div style={{ fontSize: 10, color: '#555', fontFamily: 'monospace' }}>{job.est_time_min}min</div>}
-          {job.est_cost && <div style={{ fontSize: 9, color: '#2a2a2a' }}>${job.est_cost}</div>}
+          {job.est_time_min && <div style={{ fontSize: 10, color: T?.textDim ?? '#555', fontFamily: 'monospace' }}>{job.est_time_min}min</div>}
+          {job.est_cost && <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a' }}>${job.est_cost}</div>}
         </div>
       </div>
 
@@ -382,7 +393,7 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
           {ORDER_STAGES.map((s, i) => (
             <div key={s} title={s} style={{
               flex: 1, height: 3, borderRadius: 2,
-              background: i <= stageIdx ? (ORDER_COLOR[ORDER_STAGES[i]] || '#555') : '#111'
+              background: i <= stageIdx ? (ORDER_COLOR[ORDER_STAGES[i]] || '#555') : (T?.inputBg ?? '#111')
             }} />
           ))}
         </div>
@@ -393,13 +404,13 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
         {canBack && (
           <button onClick={() => onAdvance(job.id || job.spec_id, ORDER_STAGES[stageIdx - 1])} style={{
             fontSize: 9, padding: '3px 8px', background: 'transparent',
-            border: '1px solid #1a1a1a', color: '#444', cursor: 'pointer', borderRadius: 3
+            border: `1px solid ${T?.border ?? '#1a1a1a'}`, color: T?.textDim ?? '#444', cursor: 'pointer', borderRadius: 3
           }}>← Back</button>
         )}
         {canAdvance && (
           <button onClick={() => onAdvance(job.id || job.spec_id, ORDER_STAGES[stageIdx + 1])} style={{
-            fontSize: 9, padding: '3px 10px', background: '#00ff8812',
-            border: '1px solid #00ff8830', color: '#00ff88', cursor: 'pointer', borderRadius: 3, fontWeight: 700
+            fontSize: 9, padding: '3px 10px', background: '#00cc6612',
+            border: '1px solid #00cc6630', color: '#00cc66', cursor: 'pointer', borderRadius: 3, fontWeight: 700
           }}>Next →</button>
         )}
 
@@ -407,23 +418,23 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
         {job.status === 'NEW' || job.status === 'AI_PREP' ? (
           assigning && idlePrinters.length > 0 ? (
             <>
-              <span style={{ fontSize: 9, color: '#444' }}>Assign to:</span>
+              <span style={{ fontSize: 9, color: T?.textDim ?? '#444' }}>Assign to:</span>
               {idlePrinters.map(p => (
                 <button key={p.id} onClick={() => { onAssign(job.id || job.spec_id, p.id); setAssigning(false) }} style={{
-                  fontSize: 9, padding: '3px 8px', background: '#00ff8812', border: '1px solid #00ff8830',
-                  color: '#00ff88', cursor: 'pointer', borderRadius: 3
+                  fontSize: 9, padding: '3px 8px', background: '#00cc6612', border: '1px solid #00cc6630',
+                  color: '#00cc66', cursor: 'pointer', borderRadius: 3
                 }}>{p.name}</button>
               ))}
               <button onClick={() => setAssigning(false)} style={{
-                fontSize: 9, padding: '3px 6px', background: 'transparent', border: '1px solid #1a1a1a',
-                color: '#333', cursor: 'pointer', borderRadius: 3
+                fontSize: 9, padding: '3px 6px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+                color: T?.textDim ?? '#333', cursor: 'pointer', borderRadius: 3
               }}>✕</button>
             </>
           ) : (
             <button onClick={() => setAssigning(true)} disabled={idlePrinters.length === 0} style={{
-              fontSize: 9, padding: '3px 10px', background: idlePrinters.length > 0 ? '#4a9eff12' : '#111',
-              border: `1px solid ${idlePrinters.length > 0 ? '#4a9eff30' : '#1a1a1a'}`,
-              color: idlePrinters.length > 0 ? '#4a9eff' : '#2a2a2a',
+              fontSize: 9, padding: '3px 10px', background: idlePrinters.length > 0 ? '#4a9eff12' : (T?.inputBg ?? '#111'),
+              border: `1px solid ${idlePrinters.length > 0 ? '#4a9eff30' : (T?.border ?? '#1a1a1a')}`,
+              color: idlePrinters.length > 0 ? '#4a9eff' : (T?.textFaint ?? '#2a2a2a'),
               cursor: idlePrinters.length > 0 ? 'pointer' : 'default', borderRadius: 3
             }}>
               {idlePrinters.length > 0 ? '⬡ Assign Printer' : 'No idle printers'}
@@ -433,10 +444,10 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
 
         <button onClick={() => onCancel(job.id || job.spec_id)} style={{
           fontSize: 9, padding: '3px 8px', background: 'transparent', marginLeft: 'auto',
-          border: '1px solid #1a1a1a', color: '#333', cursor: 'pointer', borderRadius: 3
+          border: `1px solid ${T?.border ?? '#1a1a1a'}`, color: T?.textDim ?? '#333', cursor: 'pointer', borderRadius: 3
         }}>✕</button>
       </div>
-      {job.notes && <div style={{ fontSize: 9, color: '#333', marginTop: 6, fontStyle: 'italic' }}>{job.notes}</div>}
+      {job.notes && <div style={{ fontSize: 9, color: T?.textDim ?? '#333', marginTop: 6, fontStyle: 'italic' }}>{job.notes}</div>}
     </div>
   )
 }
@@ -444,6 +455,7 @@ function QueueCard({ job, printers, onAssign, onCancel, onAdvance }) {
 // ─── Kanban Column + Card ─────────────────────────────────────────────────────
 
 function KanbanCard({ job, stage, onMove, onCancel }) {
+  const T = useT()
   const matColor = MAT_COLOR[job.material] || '#555'
   const [dragOver, setDragOver] = useState(false)
 
@@ -452,13 +464,13 @@ function KanbanCard({ job, stage, onMove, onCancel }) {
       draggable
       onDragStart={e => { e.dataTransfer.setData('jobId', job.id || job.spec_id); e.dataTransfer.setData('fromStage', stage) }}
       style={{
-        background: dragOver ? 'rgba(255,255,255,0.04)' : 'rgba(255,255,255,0.02)',
-        border: '1px solid rgba(255,255,255,0.06)',
+        background: dragOver ? (T?.cardHover ?? 'rgba(255,255,255,0.04)') : (T?.card ?? 'rgba(255,255,255,0.02)'),
+        border: `1px solid ${T?.border ?? 'rgba(255,255,255,0.06)'}`,
         borderRadius: 7, padding: '10px 12px', marginBottom: 6, cursor: 'grab',
         transition: 'background 0.1s'
       }}
     >
-      <div style={{ fontSize: 10, color: '#bbb', fontWeight: 600, marginBottom: 4, fontFamily: 'monospace' }}>
+      <div style={{ fontSize: 10, color: T?.text ?? '#bbb', fontWeight: 600, marginBottom: 4, fontFamily: 'monospace' }}>
         {job.name || job.spec_id || job.id}
       </div>
       <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
@@ -466,24 +478,24 @@ function KanbanCard({ job, stage, onMove, onCancel }) {
         {job.qty > 1 && <Tag color="#888">×{job.qty}</Tag>}
         {job.priority === 'high' && <Tag color="#ff4444">!</Tag>}
       </div>
-      {job.est_time_min && <div style={{ fontSize: 9, color: '#2a2a2a', fontFamily: 'monospace' }}>{job.est_time_min}min</div>}
+      {job.est_time_min && <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', fontFamily: 'monospace' }}>{job.est_time_min}min</div>}
       {job.assigned_printer && <div style={{ fontSize: 8, color: '#4a9eff', marginTop: 2 }}>⬡ {job.assigned_printer}</div>}
       <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
         {ORDER_STAGES.indexOf(stage) > 0 && (
           <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) - 1])} style={{
-            fontSize: 8, padding: '2px 6px', background: 'transparent', border: '1px solid #1a1a1a',
-            color: '#444', cursor: 'pointer', borderRadius: 3
+            fontSize: 8, padding: '2px 6px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+            color: T?.textDim ?? '#444', cursor: 'pointer', borderRadius: 3
           }}>←</button>
         )}
         {ORDER_STAGES.indexOf(stage) < ORDER_STAGES.length - 1 && (
           <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) + 1])} style={{
-            fontSize: 8, padding: '2px 6px', background: '#00ff8810', border: '1px solid #00ff8820',
-            color: '#00ff88', cursor: 'pointer', borderRadius: 3
+            fontSize: 8, padding: '2px 6px', background: '#00cc6610', border: '1px solid #00cc6620',
+            color: '#00cc66', cursor: 'pointer', borderRadius: 3
           }}>→</button>
         )}
         <button onClick={() => onCancel(job.id || job.spec_id)} style={{
-          fontSize: 8, padding: '2px 5px', background: 'transparent', border: '1px solid #1a1a1a',
-          color: '#2a2a2a', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
+          fontSize: 8, padding: '2px 5px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+          color: T?.textFaint ?? '#2a2a2a', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
         }}>✕</button>
       </div>
     </div>
@@ -491,6 +503,7 @@ function KanbanCard({ job, stage, onMove, onCancel }) {
 }
 
 function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop }) {
+  const T = useT()
   const [dragOver, setDragOver] = useState(false)
   const color = ORDER_COLOR[stage] || '#444'
   const icon = ORDER_ICON[stage] || '○'
@@ -507,15 +520,15 @@ function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop }) {
       }}
       style={{
         minWidth: 180, flex: '1 1 180px',
-        background: dragOver ? `${color}08` : 'rgba(255,255,255,0.01)',
-        border: `1px solid ${dragOver ? color + '30' : 'rgba(255,255,255,0.05)'}`,
+        background: dragOver ? `${color}08` : (T?.sectionBg ?? 'rgba(255,255,255,0.01)'),
+        border: `1px solid ${dragOver ? color + '30' : (T?.border ?? 'rgba(255,255,255,0.05)')}`,
         borderRadius: 8, padding: '10px 10px 6px', transition: 'all 0.15s'
       }}
     >
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
           <span style={{ fontSize: 11, color }}>{icon}</span>
-          <span style={{ fontSize: 9, color: '#555', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{stage.replace('_', ' ')}</span>
+          <span style={{ fontSize: 9, color: T?.textDim ?? '#555', fontWeight: 700, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{stage.replace('_', ' ')}</span>
         </div>
         {jobs.length > 0 && (
           <span style={{ fontSize: 9, background: color + '22', color, borderRadius: 10, padding: '1px 7px', fontWeight: 700 }}>{jobs.length}</span>
@@ -523,7 +536,7 @@ function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop }) {
       </div>
       {jobs.length === 0 ? (
         <div style={{ height: 60, display: 'flex', alignItems: 'center', justifyContent: 'center' }}>
-          <span style={{ fontSize: 9, color: '#1a1a1a' }}>drop here</span>
+          <span style={{ fontSize: 9, color: T?.textFaint ?? '#1a1a1a' }}>drop here</span>
         </div>
       ) : (
         jobs.map(job => (
@@ -537,12 +550,13 @@ function KanbanColumn({ stage, jobs, onMove, onCancel, onDrop }) {
 // ─── Add Order Form ───────────────────────────────────────────────────────────
 
 function AddOrderForm({ onSave, onCancel, base }) {
+  const T = useT()
   const [form, setForm] = useState({ name: '', material: 'PLA', qty: 1, priority: 'normal', est_time_min: '', est_cost: '', notes: '' })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const inp = {
-    background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
-    color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
+    background: T?.inputBg ?? '#0d0d0d', border: `1px solid ${T?.inputBorder ?? 'rgba(255,255,255,0.07)'}`,
+    color: T?.text ?? '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
     fontFamily: 'monospace', width: '100%'
   }
 
@@ -561,25 +575,25 @@ function AddOrderForm({ onSave, onCancel, base }) {
   }
 
   return (
-    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: 16, marginBottom: 14 }}>
+    <div style={{ background: T?.card ?? 'rgba(255,255,255,0.02)', border: `1px solid ${T?.border ?? 'rgba(255,255,255,0.07)'}`, borderRadius: 9, padding: 16, marginBottom: 14 }}>
       <SectionHead>New Work Order</SectionHead>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Job Name / ID</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Job Name / ID</div>
           <input value={form.name} onChange={e => set('name', e.target.value)} placeholder="gridfinity-bin-v3" style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Material</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Material</div>
           <select value={form.material} onChange={e => set('material', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
             {SLICER_MATS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Quantity</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Quantity</div>
           <input type="number" min={1} value={form.qty} onChange={e => set('qty', e.target.value)} style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Priority</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Priority</div>
           <select value={form.priority} onChange={e => set('priority', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
             <option value="normal">Normal</option>
             <option value="high">High / Urgent</option>
@@ -587,26 +601,26 @@ function AddOrderForm({ onSave, onCancel, base }) {
           </select>
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Est. Time (min)</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Est. Time (min)</div>
           <input type="number" value={form.est_time_min} onChange={e => set('est_time_min', e.target.value)} placeholder="120" style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Est. Cost ($)</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Est. Cost ($)</div>
           <input type="number" step="0.01" value={form.est_cost} onChange={e => set('est_cost', e.target.value)} placeholder="2.50" style={inp} />
         </div>
       </div>
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Notes</div>
+        <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Notes</div>
         <input value={form.notes} onChange={e => set('notes', e.target.value)} placeholder="Optional notes..." style={inp} />
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={handleSave} disabled={saving} style={{
-          flex: 1, padding: '7px', background: saving ? '#111' : '#00ff88', color: saving ? '#333' : '#000',
+          flex: 1, padding: '7px', background: saving ? (T?.inputBg ?? '#111') : '#00cc66', color: saving ? (T?.textDim ?? '#333') : '#000',
           border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: saving ? 'default' : 'pointer'
         }}>{saving ? 'Adding...' : '+ Add to Kanban'}</button>
         <button onClick={onCancel} style={{
-          padding: '7px 14px', background: 'transparent', border: '1px solid #1a1a1a',
-          color: '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
+          padding: '7px 14px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+          color: T?.textDim ?? '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
         }}>Cancel</button>
       </div>
     </div>
@@ -616,23 +630,24 @@ function AddOrderForm({ onSave, onCancel, base }) {
 // ─── Filament Spool Card ────────────────────────────────────────────────────────
 
 function SpoolCard({ spool, onDelete, onEdit }) {
+  const T = useT()
   const color = MAT_COLOR[spool.material] || '#888'
   const pct = spool.remaining_pct ?? (spool.remaining_g && spool.total_g ? Math.round((spool.remaining_g / spool.total_g) * 100) : null)
   const low = pct != null && pct < 20
 
   return (
     <div style={{
-      background: low ? 'rgba(255,68,68,0.04)' : 'rgba(255,255,255,0.02)',
-      border: `1px solid ${low ? '#ff444422' : 'rgba(255,255,255,0.05)'}`,
+      background: low ? 'rgba(255,68,68,0.06)' : (T?.card ?? 'rgba(255,255,255,0.02)'),
+      border: `1px solid ${low ? '#ff444422' : (T?.border ?? 'rgba(255,255,255,0.05)')}`,
       borderRadius: 8, padding: '12px'
     }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-        <div style={{ width: 12, height: 12, borderRadius: '50%', background: spool.hex_color || color, flexShrink: 0, border: '1px solid rgba(255,255,255,0.1)' }} />
+        <div style={{ width: 12, height: 12, borderRadius: '50%', background: spool.hex_color || color, flexShrink: 0, border: `1px solid ${T?.border ?? 'rgba(255,255,255,0.1)'}` }} />
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ fontSize: 10, color: '#ccc', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div style={{ fontSize: 10, color: T?.text ?? '#ccc', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {spool.brand ? `${spool.brand} ` : ''}{spool.material}
           </div>
-          <div style={{ fontSize: 9, color: '#333' }}>{spool.color_name || '—'}</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#333' }}>{spool.color_name || '—'}</div>
         </div>
         <div style={{ display: 'flex', gap: 4 }}>
           {low && <Tag color="#ff4444">LOW</Tag>}
@@ -641,12 +656,12 @@ function SpoolCard({ spool, onDelete, onEdit }) {
       {pct != null && (
         <>
           <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-            <span style={{ fontSize: 9, color: '#333' }}>Remaining</span>
+            <span style={{ fontSize: 9, color: T?.textDim ?? '#333' }}>Remaining</span>
             <span style={{ fontSize: 9, fontFamily: 'monospace', color: low ? '#ff4444' : color }}>{pct}%</span>
           </div>
           <ProgressBar pct={pct} color={low ? '#ff4444' : color} height={4} />
           {spool.remaining_g != null && (
-            <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 4 }}>
+            <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', marginTop: 4 }}>
               {spool.remaining_g}g / {spool.total_g}g · ${((spool.remaining_g * (spool.cost_per_g || 0.025))).toFixed(2)} value
             </div>
           )}
@@ -655,13 +670,13 @@ function SpoolCard({ spool, onDelete, onEdit }) {
       {spool.assigned_printer && (
         <div style={{ fontSize: 8, color: '#4a9eff', marginTop: 4 }}>⬡ {spool.assigned_printer}</div>
       )}
-      {spool.notes && <div style={{ fontSize: 8, color: '#2a2a2a', marginTop: 3, fontStyle: 'italic' }}>{spool.notes}</div>}
+      {spool.notes && <div style={{ fontSize: 8, color: T?.textFaint ?? '#2a2a2a', marginTop: 3, fontStyle: 'italic' }}>{spool.notes}</div>}
       <div style={{ display: 'flex', gap: 5, marginTop: 8 }}>
         <button onClick={() => onEdit && onEdit(spool)} style={{
-          fontSize: 8, padding: '2px 8px', background: 'transparent', border: '1px solid #1a1a1a', color: '#444', cursor: 'pointer', borderRadius: 3
+          fontSize: 8, padding: '2px 8px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`, color: T?.textDim ?? '#444', cursor: 'pointer', borderRadius: 3
         }}>Edit</button>
         <button onClick={() => onDelete && onDelete(spool.id)} style={{
-          fontSize: 8, padding: '2px 8px', background: 'transparent', border: '1px solid #1a1a1a', color: '#ff444466', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
+          fontSize: 8, padding: '2px 8px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`, color: '#ff444466', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
         }}>Remove</button>
       </div>
     </div>
@@ -671,15 +686,16 @@ function SpoolCard({ spool, onDelete, onEdit }) {
 // ─── Add Spool Form ───────────────────────────────────────────────────────────
 
 function AddSpoolForm({ onSave, onCancel, base, initialData, printers }) {
+  const T = useT()
   const [form, setForm] = useState(initialData || {
-    material: 'PLA', brand: '', color_name: '', hex_color: '#00ff88',
+    material: 'PLA', brand: '', color_name: '', hex_color: '#00cc66',
     total_g: 1000, remaining_g: 1000, cost_per_g: 0.025, assigned_printer: '', notes: ''
   })
   const [saving, setSaving] = useState(false)
   const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
   const inp = {
-    background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
-    color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
+    background: T?.inputBg ?? '#0d0d0d', border: `1px solid ${T?.inputBorder ?? 'rgba(255,255,255,0.07)'}`,
+    color: T?.text ?? '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 11,
     fontFamily: 'monospace', width: '100%'
   }
 
@@ -700,25 +716,25 @@ function AddSpoolForm({ onSave, onCancel, base, initialData, printers }) {
   }
 
   return (
-    <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.07)', borderRadius: 9, padding: 16, marginBottom: 14 }}>
+    <div style={{ background: T?.card ?? 'rgba(255,255,255,0.02)', border: `1px solid ${T?.border ?? 'rgba(255,255,255,0.07)'}`, borderRadius: 9, padding: 16, marginBottom: 14 }}>
       <SectionHead>{initialData ? 'Edit Spool' : 'Add Filament Spool'}</SectionHead>
       <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Material</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Material</div>
           <select value={form.material} onChange={e => set('material', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
             {SPOOL_MATERIALS.map(m => <option key={m} value={m}>{m}</option>)}
           </select>
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Brand</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Brand</div>
           <input value={form.brand} onChange={e => set('brand', e.target.value)} placeholder="Bambu Lab" style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Color Name</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Color Name</div>
           <input value={form.color_name} onChange={e => set('color_name', e.target.value)} placeholder="Bambu Green" style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Color</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Color</div>
           <div style={{ display: 'flex', gap: 6, alignItems: 'center' }}>
             <input type="color" value={form.hex_color} onChange={e => set('hex_color', e.target.value)}
               style={{ width: 36, height: 32, border: 'none', padding: 2, background: 'transparent', cursor: 'pointer' }} />
@@ -726,19 +742,19 @@ function AddSpoolForm({ onSave, onCancel, base, initialData, printers }) {
           </div>
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Total Weight (g)</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Total Weight (g)</div>
           <input type="number" value={form.total_g} onChange={e => set('total_g', e.target.value)} style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Remaining (g)</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Remaining (g)</div>
           <input type="number" value={form.remaining_g} onChange={e => set('remaining_g', e.target.value)} style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Cost per gram ($)</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Cost per gram ($)</div>
           <input type="number" step="0.001" value={form.cost_per_g} onChange={e => set('cost_per_g', e.target.value)} style={inp} />
         </div>
         <div>
-          <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Assign to Printer</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Assign to Printer</div>
           <select value={form.assigned_printer || ''} onChange={e => set('assigned_printer', e.target.value)} style={{ ...inp, cursor: 'pointer' }}>
             <option value="">— Unassigned —</option>
             {printers.map(p => <option key={p.id} value={p.id}>{p.name}</option>)}
@@ -746,23 +762,23 @@ function AddSpoolForm({ onSave, onCancel, base, initialData, printers }) {
         </div>
       </div>
       <div style={{ marginBottom: 10 }}>
-        <div style={{ fontSize: 9, color: '#444', marginBottom: 3 }}>Notes</div>
+        <div style={{ fontSize: 9, color: T?.textDim ?? '#444', marginBottom: 3 }}>Notes</div>
         <input value={form.notes || ''} onChange={e => set('notes', e.target.value)} placeholder="Optional notes..." style={inp} />
       </div>
       {/* Cost preview */}
-      <div style={{ fontSize: 9, color: '#2a2a2a', marginBottom: 10 }}>
+      <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', marginBottom: 10 }}>
         Estimated value: ${(Number(form.remaining_g) * Number(form.cost_per_g)).toFixed(2)}
         {' · '}
         Total spool: ${(Number(form.total_g) * Number(form.cost_per_g)).toFixed(2)}
       </div>
       <div style={{ display: 'flex', gap: 8 }}>
         <button onClick={handleSave} disabled={saving} style={{
-          flex: 1, padding: '7px', background: saving ? '#111' : '#00ff88', color: saving ? '#333' : '#000',
+          flex: 1, padding: '7px', background: saving ? (T?.inputBg ?? '#111') : '#00cc66', color: saving ? (T?.textDim ?? '#333') : '#000',
           border: 'none', borderRadius: 6, fontWeight: 700, fontSize: 11, cursor: saving ? 'default' : 'pointer'
         }}>{saving ? 'Saving...' : initialData ? 'Save Changes' : '+ Add Spool'}</button>
         <button onClick={onCancel} style={{
-          padding: '7px 14px', background: 'transparent', border: '1px solid #1a1a1a',
-          color: '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
+          padding: '7px 14px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+          color: T?.textDim ?? '#333', borderRadius: 6, cursor: 'pointer', fontSize: 11
         }}>Cancel</button>
       </div>
     </div>
@@ -772,6 +788,7 @@ function AddSpoolForm({ onSave, onCancel, base, initialData, printers }) {
 // ─── Alert Card ────────────────────────────────────────────────────────────────
 
 function AlertCard({ alert }) {
+  const T = useT()
   const color = alert.severity === 'error' ? '#ff4444' : alert.severity === 'warn' ? '#ff9800' : '#4a9eff'
   return (
     <div style={{
@@ -782,9 +799,9 @@ function AlertCard({ alert }) {
         {alert.severity === 'error' ? '🔴' : alert.severity === 'warn' ? '🟡' : 'ℹ️'}
       </span>
       <div style={{ flex: 1 }}>
-        <div style={{ fontSize: 10, color: '#ccc', fontWeight: 600, marginBottom: 2 }}>{alert.title}</div>
-        <div style={{ fontSize: 9, color: '#444', lineHeight: 1.6 }}>{alert.message}</div>
-        {alert.ts && <div style={{ fontSize: 8, color: '#2a2a2a', marginTop: 3 }}>{new Date(alert.ts).toLocaleTimeString()}</div>}
+        <div style={{ fontSize: 10, color: T?.text ?? '#ccc', fontWeight: 600, marginBottom: 2 }}>{alert.title}</div>
+        <div style={{ fontSize: 9, color: T?.textDim ?? '#444', lineHeight: 1.6 }}>{alert.message}</div>
+        {alert.ts && <div style={{ fontSize: 8, color: T?.textFaint ?? '#2a2a2a', marginTop: 3 }}>{new Date(alert.ts).toLocaleTimeString()}</div>}
       </div>
     </div>
   )
@@ -793,18 +810,19 @@ function AlertCard({ alert }) {
 // ─── Slice Card ────────────────────────────────────────────────────────────────
 
 function SliceCard({ entry }) {
+  const T = useT()
   const flagged = entry.flagged_for_review
   const timeDiff = entry.actual_time_seconds && entry.claimed_time_seconds
     ? Math.round(((entry.actual_time_seconds - entry.claimed_time_seconds) / entry.claimed_time_seconds) * 100) : null
   return (
     <div style={{
-      background: 'rgba(255,255,255,0.015)',
-      border: `1px solid ${flagged ? '#ff980022' : 'rgba(255,255,255,0.05)'}`,
+      background: T?.card ?? 'rgba(255,255,255,0.015)',
+      border: `1px solid ${flagged ? '#ff980022' : (T?.border ?? 'rgba(255,255,255,0.05)')}`,
       borderRadius: 8, padding: '11px 13px', marginBottom: 8
     }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-        <span style={{ fontSize: 10, color: '#aaa', fontFamily: 'monospace' }}>{entry.spec_id || 'slice'}</span>
-        <Tag color={flagged ? '#ff9800' : '#00ff88'}>{flagged ? '⚠ FLAGGED' : '✓ PASS'}</Tag>
+        <span style={{ fontSize: 10, color: T?.textDim ?? '#aaa', fontFamily: 'monospace' }}>{entry.spec_id || 'slice'}</span>
+        <Tag color={flagged ? '#ff9800' : '#00cc66'}>{flagged ? '⚠ FLAGGED' : '✓ PASS'}</Tag>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: '6px' }}>
         {[
@@ -815,12 +833,12 @@ function SliceCard({ entry }) {
           ['Δ Time',   timeDiff != null ? `${timeDiff > 0 ? '+' : ''}${timeDiff}%` : '—'],
         ].map(([k, v]) => (
           <div key={k}>
-            <div style={{ fontSize: 8, color: '#2a2a2a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
-            <div style={{ fontSize: 10, color: k === 'Δ Time' && timeDiff && Math.abs(timeDiff) > 10 ? '#ff9800' : '#888', fontFamily: 'monospace', marginTop: 2 }}>{v}</div>
+            <div style={{ fontSize: 8, color: T?.textFaint ?? '#2a2a2a', textTransform: 'uppercase', letterSpacing: '0.08em' }}>{k}</div>
+            <div style={{ fontSize: 10, color: k === 'Δ Time' && timeDiff && Math.abs(timeDiff) > 10 ? '#ff9800' : (T?.textDim ?? '#888'), fontFamily: 'monospace', marginTop: 2 }}>{v}</div>
           </div>
         ))}
       </div>
-      <div style={{ marginTop: 7, fontSize: 8, color: '#1e1e1e' }}>{new Date(entry.received_at).toLocaleString()}</div>
+      <div style={{ marginTop: 7, fontSize: 8, color: T?.textFaint ?? '#1e1e1e' }}>{new Date(entry.received_at).toLocaleString()}</div>
     </div>
   )
 }
@@ -828,16 +846,17 @@ function SliceCard({ entry }) {
 // ─── Order Row ─────────────────────────────────────────────────────────────────
 
 function OrderRow({ order }) {
+  const T = useT()
   const stageIdx = ORDER_STAGES.indexOf(order.status)
   const color = ORDER_COLOR[order.status] || '#444'
   const matColor = MAT_COLOR[order.material] || '#555'
   return (
-    <div style={{ padding: '10px 0', borderBottom: '1px solid rgba(255,255,255,0.03)' }}>
+    <div style={{ padding: '10px 0', borderBottom: `1px solid ${T?.border ?? 'rgba(255,255,255,0.03)'}` }}>
       <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 6 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 10, color: '#bbb', fontFamily: 'monospace', fontWeight: 600 }}>{order.name || order.spec_id || order.id}</span>
+          <span style={{ fontSize: 10, color: T?.text ?? '#bbb', fontFamily: 'monospace', fontWeight: 600 }}>{order.name || order.spec_id || order.id}</span>
           <Tag color={matColor}>{order.material || 'PLA'}</Tag>
-          {order.qty > 1 && <span style={{ fontSize: 9, color: '#333' }}>×{order.qty}</span>}
+          {order.qty > 1 && <span style={{ fontSize: 9, color: T?.textDim ?? '#333' }}>×{order.qty}</span>}
         </div>
         <Tag color={color}>{order.status || 'NEW'}</Tag>
       </div>
@@ -846,7 +865,7 @@ function OrderRow({ order }) {
           {ORDER_STAGES.map((s, i) => (
             <div key={s} title={s} style={{
               flex: 1, height: 3, borderRadius: 2,
-              background: i <= stageIdx ? (ORDER_COLOR[ORDER_STAGES[i]] || '#555') : '#111'
+              background: i <= stageIdx ? (ORDER_COLOR[ORDER_STAGES[i]] || '#555') : (T?.inputBg ?? '#111')
             }} />
           ))}
         </div>
@@ -857,12 +876,13 @@ function OrderRow({ order }) {
 
 // ─── Analytics helpers ─────────────────────────────────────────────────────────
 
-function MiniBar({ label, value, max, color = '#00ff88', unit = '' }) {
+function MiniBar({ label, value, max, color = '#00cc66', unit = '' }) {
+  const T = useT()
   const pct = max > 0 ? Math.min(100, (value / max) * 100) : 0
   return (
     <div style={{ marginBottom: 10 }}>
       <div style={{ display: 'flex', justifyContent: 'space-between', marginBottom: 4 }}>
-        <span style={{ fontSize: 10, color: '#555' }}>{label}</span>
+        <span style={{ fontSize: 10, color: T?.textDim ?? '#555' }}>{label}</span>
         <span style={{ fontSize: 10, fontFamily: 'monospace', color }}>{value}{unit}</span>
       </div>
       <ProgressBar pct={pct} color={color} height={4} />
@@ -873,6 +893,7 @@ function MiniBar({ label, value, max, color = '#00ff88', unit = '' }) {
 // ─── Slicer UI helpers ────────────────────────────────────────────────────────
 
 function DropZone({ file, onFile }) {
+  const T = useT()
   const [dragging, setDragging] = useState(false)
   const inputRef = useRef(null)
   const onDrop = (e) => {
@@ -887,9 +908,9 @@ function DropZone({ file, onFile }) {
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
       style={{
-        border: `1px dashed ${dragging ? '#00ff88' : file ? '#00ff8844' : '#1e1e1e'}`,
+        border: `1px dashed ${dragging ? '#00cc66' : file ? '#00cc6644' : (T?.border ?? '#1e1e1e')}`,
         borderRadius: 8, padding: 14, cursor: 'pointer', textAlign: 'center',
-        background: dragging ? '#00ff8808' : file ? '#00ff8803' : 'rgba(255,255,255,0.01)',
+        background: dragging ? '#00cc6608' : file ? '#00cc6603' : (T?.sectionBg ?? 'rgba(255,255,255,0.01)'),
         transition: 'all 0.15s', marginBottom: 14
       }}
     >
@@ -898,14 +919,14 @@ function DropZone({ file, onFile }) {
       {file ? (
         <>
           <div style={{ fontSize: 18, marginBottom: 4 }}>📄</div>
-          <div style={{ fontSize: 10, color: '#00ff88', fontFamily: 'monospace', wordBreak: 'break-all' }}>{file.name}</div>
-          <div style={{ fontSize: 9, color: '#333', marginTop: 3 }}>{(file.size / 1024).toFixed(0)} KB · click to change</div>
+          <div style={{ fontSize: 10, color: '#00cc66', fontFamily: 'monospace', wordBreak: 'break-all' }}>{file.name}</div>
+          <div style={{ fontSize: 9, color: T?.textDim ?? '#333', marginTop: 3 }}>{(file.size / 1024).toFixed(0)} KB · click to change</div>
         </>
       ) : (
         <>
           <div style={{ fontSize: 22, opacity: 0.12, marginBottom: 6 }}>⬆</div>
-          <div style={{ fontSize: 10, color: '#2a2a2a' }}>Drop STL / 3MF / OBJ or click to browse</div>
-          <div style={{ fontSize: 9, color: '#1a1a1a', marginTop: 3 }}>or slice the last generated design below</div>
+          <div style={{ fontSize: 10, color: T?.textFaint ?? '#2a2a2a' }}>Drop STL / 3MF / OBJ or click to browse</div>
+          <div style={{ fontSize: 9, color: T?.textFaint ?? '#1a1a1a', marginTop: 3 }}>or slice the last generated design below</div>
         </>
       )}
     </div>
@@ -913,27 +934,18 @@ function DropZone({ file, onFile }) {
 }
 
 function SlicerParam({ label, children }) {
+  const T = useT()
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-      <span style={{ fontSize: 9, color: '#3a3a3a', textTransform: 'uppercase', letterSpacing: '0.08em', width: 100, flexShrink: 0 }}>{label}</span>
+      <span style={{ fontSize: 9, color: T?.textDim ?? '#3a3a3a', textTransform: 'uppercase', letterSpacing: '0.08em', width: 100, flexShrink: 0 }}>{label}</span>
       <div style={{ flex: 1 }}>{children}</div>
     </div>
   )
 }
 
-const selectStyle = {
-  width: '100%', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
-  color: '#bbb', padding: '5px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace', cursor: 'pointer'
-}
-
-const numStyle = {
-  width: '100%', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',
-  color: '#bbb', padding: '5px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace', textAlign: 'right'
-}
-
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
-export default function Dashboard() {
+export default function Dashboard({ darkMode = false }) {
   const [farm, setFarm] = useState({ printers: [], stats: {}, orders: [], feedback: [] })
   const [queue, setQueue] = useState([])
   const [inventory, setInventory] = useState([])
@@ -1140,6 +1152,23 @@ export default function Dashboard() {
     { id: 'slicer',     label: 'Slicer',      icon: '◈' },
   ]
 
+  const T = darkMode
+    ? { bg: '#080808', card: 'rgba(255,255,255,0.02)', cardHover: 'rgba(255,255,255,0.04)',
+        border: 'rgba(255,255,255,0.06)', text: '#e0e0e0', textDim: '#999', textFaint: '#555',
+        inputBg: '#0d0d0d', inputBorder: 'rgba(255,255,255,0.07)', sectionBg: 'rgba(255,255,255,0.01)' }
+    : { bg: '#f5f5f7', card: '#ffffff', cardHover: 'rgba(0,0,0,0.03)',
+        border: 'rgba(0,0,0,0.08)', text: '#111111', textDim: '#555', textFaint: '#999',
+        inputBg: '#f0f0f2', inputBorder: 'rgba(0,0,0,0.1)', sectionBg: 'rgba(0,0,0,0.02)' }
+
+  const selectStyle = {
+    width: '100%', background: T.inputBg, border: `1px solid ${T.inputBorder}`,
+    color: T.textDim, padding: '5px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace', cursor: 'pointer'
+  }
+  const numStyle = {
+    width: '100%', background: T.inputBg, border: `1px solid ${T.inputBorder}`,
+    color: T.textDim, padding: '5px 8px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace', textAlign: 'right'
+  }
+
   const matBreakdown = {}
   ;[...orders, ...feedback].forEach(item => {
     if (item.material) matBreakdown[item.material] = (matBreakdown[item.material] || 0) + 1
@@ -1155,12 +1184,13 @@ export default function Dashboard() {
   })
 
   return (
-    <div style={{ minHeight: '100vh', padding: '20px 24px', fontFamily: "'Inter', system-ui, sans-serif", color: 'white', background: '#080808' }}>
+    <ThemeCtx.Provider value={T}>
+    <div style={{ minHeight: '100vh', padding: '20px 24px', fontFamily: "'Inter', system-ui, sans-serif", color: T.text, background: T.bg }}>
       <style>{`
         @keyframes pulse { 0%,100%{opacity:1;transform:scale(1)} 50%{opacity:0.35;transform:scale(1.5)} }
         * { box-sizing: border-box }
         ::-webkit-scrollbar { width: 3px; height: 3px } ::-webkit-scrollbar-track { background: transparent }
-        ::-webkit-scrollbar-thumb { background: #1a1a1a; border-radius: 2px }
+        ::-webkit-scrollbar-thumb { background: ${T.border}; border-radius: 2px }
       `}</style>
 
       {/* API URL bar */}
@@ -1173,14 +1203,14 @@ export default function Dashboard() {
           <span style={{ fontSize: 11, flexShrink: 0 }}>⚠</span>
           <span style={{ fontSize: 9, color: '#ff9800', flexShrink: 0 }}>BACKEND URL</span>
           <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
-            style={{ flex: 1, background: '#0d0d0d', border: '1px solid rgba(255,152,0,0.2)', color: '#ccc', padding: '5px 10px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace' }} />
+            style={{ flex: 1, background: T.inputBg, border: '1px solid rgba(255,152,0,0.2)', color: T.text, padding: '5px 10px', borderRadius: 5, fontSize: 11, fontFamily: 'monospace' }} />
         </div>
       )}
       {!isLocalhost && (
         <div style={{ marginBottom: 10, display: 'flex', alignItems: 'center', gap: 8 }}>
-          <span style={{ fontSize: 9, color: '#2a2a2a' }}>API:</span>
+          <span style={{ fontSize: 9, color: T.textFaint }}>API:</span>
           <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)}
-            style={{ width: 280, background: 'transparent', border: 'none', borderBottom: '1px solid #1a1a1a', color: '#2a2a2a', padding: '2px 4px', fontSize: 9, fontFamily: 'monospace' }} />
+            style={{ width: 280, background: 'transparent', border: 'none', borderBottom: `1px solid ${T.border}`, color: T.textFaint, padding: '2px 4px', fontSize: 9, fontFamily: 'monospace' }} />
         </div>
       )}
 
@@ -1193,10 +1223,10 @@ export default function Dashboard() {
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
             <span style={{ color: '#ff9800', fontSize: 11 }}>⚠</span>
-            <span style={{ fontSize: 10, color: '#888' }}>{alerts.length} issue{alerts.length > 1 ? 's' : ''} need attention</span>
-            <span style={{ fontSize: 9, color: '#333' }}>— click to {alertsOpen ? 'hide' : 'view'}</span>
+            <span style={{ fontSize: 10, color: T.textDim }}>{alerts.length} issue{alerts.length > 1 ? 's' : ''} need attention</span>
+            <span style={{ fontSize: 9, color: T.textFaint }}>— click to {alertsOpen ? 'hide' : 'view'}</span>
           </div>
-          <span style={{ fontSize: 9, color: '#333' }}>{alertsOpen ? '▲' : '▼'}</span>
+          <span style={{ fontSize: 9, color: T.textFaint }}>{alertsOpen ? '▲' : '▼'}</span>
         </div>
       )}
       {alertsOpen && alerts.length > 0 && (
@@ -1207,12 +1237,12 @@ export default function Dashboard() {
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em', color: '#00ff88' }}>printdash</span>
-            <span style={{ fontSize: 10, color: '#222' }}>by fofus.in</span>
+            <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em', color: '#00cc66' }}>printdash</span>
+            <span style={{ fontSize: 10, color: T.textFaint }}>by fofus.in</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-            <PulsingDot color={error ? '#ff4444' : '#00ff88'} />
-            <span style={{ fontSize: 9, color: error ? '#ff4444' : '#333' }}>
+            <PulsingDot color={error ? '#ff4444' : '#00cc66'} />
+            <span style={{ fontSize: 9, color: error ? '#ff4444' : T.textDim }}>
               {error ? `offline — ${error}` : lastPoll ? `live · ${lastPoll.toLocaleTimeString()}` : 'connecting...'}
             </span>
           </div>
@@ -1222,9 +1252,9 @@ export default function Dashboard() {
             <button key={t.id} onClick={() => setTab(t.id)} style={{
               padding: '5px 11px', fontSize: 9, fontWeight: 600, cursor: 'pointer',
               letterSpacing: '0.08em', textTransform: 'uppercase', borderRadius: 5,
-              background: tab === t.id ? '#00ff8812' : 'transparent',
-              color: tab === t.id ? '#00ff88' : '#2a2a2a',
-              border: tab === t.id ? '1px solid #00ff8828' : '1px solid transparent',
+              background: tab === t.id ? '#00cc6612' : 'transparent',
+              color: tab === t.id ? '#00cc66' : T.textFaint,
+              border: tab === t.id ? '1px solid #00cc6628' : '1px solid transparent',
               transition: 'all 0.15s', position: 'relative'
             }}>
               {t.icon} {t.label}
@@ -1239,18 +1269,18 @@ export default function Dashboard() {
           ))}
           <button onClick={poll} style={{
             padding: '5px 10px', fontSize: 11, cursor: 'pointer', borderRadius: 5,
-            background: 'transparent', border: '1px solid #111', color: '#2a2a2a'
+            background: 'transparent', border: `1px solid ${T.border}`, color: T.textDim
           }}>↻</button>
         </div>
       </div>
 
       {/* Stats row */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,1fr)', gap: 10, marginBottom: 20 }}>
-        <StatCard icon="📦" label="Active Orders" value={activeOrders.length || (stats.active_orders ?? '—')} color="#00ff88" sub={`${allOrders.length} total`} />
+        <StatCard icon="📦" label="Active Orders" value={activeOrders.length || (stats.active_orders ?? '—')} color="#00cc66" sub={`${allOrders.length} total`} />
         <StatCard icon="⬡" label="Printing" value={printing} color="#4a9eff" sub={`${idle} idle · ${printers.length} total`} />
-        <StatCard icon="◎" label="Utilization" value={printers.length > 0 ? `${utilization}%` : '—'} color={utilization > 70 ? '#00ff88' : utilization > 40 ? '#ff9800' : '#555'} sub="fleet capacity" />
+        <StatCard icon="◎" label="Utilization" value={printers.length > 0 ? `${utilization}%` : '—'} color={utilization > 70 ? '#00cc66' : utilization > 40 ? '#ff9800' : '#555'} sub="fleet capacity" />
         <StatCard icon="⚠" label="Flagged" value={alerts.length > 0 ? alerts.length : (stats.flagged ?? 0)} color="#ff9800" sub="needs review" alert={alerts.length > 0} />
-        <StatCard icon="✓" label="Success Rate" value={successRate != null ? `${successRate}%` : '—'} color={successRate > 90 ? '#00ff88' : '#ff9800'} sub={`${feedback.length} slices`} />
+        <StatCard icon="✓" label="Success Rate" value={successRate != null ? `${successRate}%` : '—'} color={successRate > 90 ? '#00cc66' : '#ff9800'} sub={`${feedback.length} slices`} />
       </div>
 
       {/* ── OVERVIEW ─────────────────────────────────────────────────────────── */}
@@ -1282,9 +1312,9 @@ export default function Dashboard() {
           <SectionHead
             action={
               <button onClick={() => setShowAddOrder(v => !v)} style={{
-                fontSize: 9, padding: '4px 12px', background: showAddOrder ? 'transparent' : '#00ff8812',
-                border: `1px solid ${showAddOrder ? '#1a1a1a' : '#00ff8830'}`,
-                color: showAddOrder ? '#333' : '#00ff88', cursor: 'pointer', borderRadius: 5, fontWeight: 600
+                fontSize: 9, padding: '4px 12px', background: showAddOrder ? 'transparent' : '#00cc6612',
+                border: `1px solid ${showAddOrder ? T.border : '#00cc6630'}`,
+                color: showAddOrder ? T.textDim : '#00cc66', cursor: 'pointer', borderRadius: 5, fontWeight: 600
               }}>{showAddOrder ? '✕ Cancel' : '+ New Order'}</button>
             }
           >
@@ -1313,7 +1343,7 @@ export default function Dashboard() {
             ))}
           </div>
 
-          <div style={{ marginTop: 8, fontSize: 8, color: '#1a1a1a' }}>
+          <div style={{ marginTop: 8, fontSize: 8, color: T.textFaint }}>
             Drag cards between columns to advance stages · Click → or ← buttons on each card
           </div>
         </div>
@@ -1341,12 +1371,12 @@ export default function Dashboard() {
                   const color = STATUS_COLOR[p.status] || '#555'
                   return (
                     <div key={p.id} style={{
-                      background: 'rgba(255,255,255,0.02)', border: `1px solid ${color}18`,
+                      background: T.card, border: `1px solid ${color}18`,
                       borderRadius: 7, padding: '10px 12px', display: 'flex', alignItems: 'center', gap: 8
                     }}>
                       <PulsingDot color={color} />
                       <div>
-                        <div style={{ fontSize: 10, color: '#ccc', fontWeight: 600 }}>{p.name}</div>
+                        <div style={{ fontSize: 10, color: T.text, fontWeight: 600 }}>{p.name}</div>
                         <Tag color={color}>{p.status}</Tag>
                       </div>
                     </div>
@@ -1364,9 +1394,9 @@ export default function Dashboard() {
           <SectionHead
             action={
               <button onClick={() => setShowAddPrinter(v => !v)} style={{
-                fontSize: 9, padding: '4px 12px', background: showAddPrinter ? 'transparent' : '#00ff8812',
-                border: `1px solid ${showAddPrinter ? '#1a1a1a' : '#00ff8830'}`,
-                color: showAddPrinter ? '#333' : '#00ff88', cursor: 'pointer', borderRadius: 5, fontWeight: 600
+                fontSize: 9, padding: '4px 12px', background: showAddPrinter ? 'transparent' : '#00cc6612',
+                border: `1px solid ${showAddPrinter ? T.border : '#00cc6630'}`,
+                color: showAddPrinter ? T.textDim : '#00cc66', cursor: 'pointer', borderRadius: 5, fontWeight: 600
               }}>{showAddPrinter ? '✕ Cancel' : '+ Connect Printer'}</button>
             }
           >
@@ -1386,13 +1416,13 @@ export default function Dashboard() {
             <div style={{ marginBottom: 20 }}>
               <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 10, marginBottom: 16 }}>
                 {[
-                  { icon: '◉', name: 'Bambu LAN', desc: 'X1C, P1S, A1 — Enable LAN Mode on printer. Find Access Code in Settings → WLAN.', color: '#00ff88' },
+                  { icon: '◉', name: 'Bambu LAN', desc: 'X1C, P1S, A1 — Enable LAN Mode on printer. Find Access Code in Settings → WLAN.', color: '#00cc66' },
                   { icon: '⬡', name: 'Moonraker', desc: 'Voron, Ender3 with Klipper — Enter your Mainsail or Fluidd URL.', color: '#4a9eff' },
                   { icon: '○', name: 'OctoPrint', desc: 'Any FDM printer via OctoPrint — Enter host URL and API key.', color: '#ff9800' },
                 ].map(c => (
                   <div key={c.name} style={{ background: `${c.color}08`, border: `1px solid ${c.color}18`, borderRadius: 8, padding: '12px' }}>
                     <div style={{ fontSize: 11, color: c.color, fontWeight: 700, marginBottom: 4 }}>{c.icon} {c.name}</div>
-                    <div style={{ fontSize: 9, color: '#333', lineHeight: 1.6 }}>{c.desc}</div>
+                    <div style={{ fontSize: 9, color: T.textDim, lineHeight: 1.6 }}>{c.desc}</div>
                   </div>
                 ))}
               </div>
@@ -1406,7 +1436,7 @@ export default function Dashboard() {
               <div style={{ display: 'flex', justifyContent: 'flex-end', marginTop: -6, marginBottom: 10 }}>
                 <button onClick={() => removePrinter(p.id)} style={{
                   fontSize: 8, padding: '2px 10px', background: 'transparent',
-                  border: '1px solid #1a1a1a', color: '#ff444444', cursor: 'pointer', borderRadius: 3
+                  border: `1px solid ${T.border}`, color: '#ff444444', cursor: 'pointer', borderRadius: 3
                 }}>Remove printer</button>
               </div>
             </div>
@@ -1415,9 +1445,9 @@ export default function Dashboard() {
           {printers.length > 0 && (
             <div style={{ marginTop: 12 }}>
               <SectionHead>Fleet Health</SectionHead>
-              <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16 }}>
+              <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16 }}>
                 {[
-                  ['Printing', printing, printers.length, '#00ff88'],
+                  ['Printing', printing, printers.length, '#00cc66'],
                   ['Idle', idle, printers.length, '#4a9eff'],
                   ['Error / Offline', errored, printers.length, '#ff4444'],
                 ].map(([label, val, total, color]) => (
@@ -1434,12 +1464,12 @@ export default function Dashboard() {
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 20 }}>
           <div>
             <SectionHead>Fleet Performance</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
               {printers.length === 0
-                ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No printer data yet</div>
+                ? <div style={{ fontSize: 10, color: T.textDim }}>No printer data yet</div>
                 : <>
-                  <MiniBar label="Utilization" value={utilization} max={100} color={utilization > 70 ? '#00ff88' : '#ff9800'} unit="%" />
-                  <MiniBar label="Printing" value={printing} max={printers.length} color="#00ff88" unit={` of ${printers.length}`} />
+                  <MiniBar label="Utilization" value={utilization} max={100} color={utilization > 70 ? '#00cc66' : '#ff9800'} unit="%" />
+                  <MiniBar label="Printing" value={printing} max={printers.length} color="#00cc66" unit={` of ${printers.length}`} />
                   <MiniBar label="Idle" value={idle} max={printers.length} color="#4a9eff" unit={` of ${printers.length}`} />
                   {errored > 0 && <MiniBar label="In Error" value={errored} max={printers.length} color="#ff4444" unit={` of ${printers.length}`} />}
                 </>
@@ -1447,9 +1477,9 @@ export default function Dashboard() {
             </div>
 
             <SectionHead>Kanban Pipeline</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16 }}>
               {allOrders.length === 0
-                ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No orders yet</div>
+                ? <div style={{ fontSize: 10, color: T.textDim }}>No orders yet</div>
                 : ORDER_STAGES.map(stage => {
                     const count = kanbanByStage[stage]?.length ?? 0
                     if (count === 0) return null
@@ -1461,21 +1491,21 @@ export default function Dashboard() {
 
           <div>
             <SectionHead>Slice Quality</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16, marginBottom: 16 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginBottom: 16 }}>
               {feedback.length === 0
-                ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No slice data yet</div>
+                ? <div style={{ fontSize: 10, color: T.textDim }}>No slice data yet</div>
                 : <>
-                  <MiniBar label="Success Rate" value={successRate} max={100} color={successRate > 90 ? '#00ff88' : '#ff9800'} unit="%" />
-                  <MiniBar label="Passed" value={feedback.filter(f => !f.flagged_for_review).length} max={feedback.length} color="#00ff88" unit={` of ${feedback.length}`} />
+                  <MiniBar label="Success Rate" value={successRate} max={100} color={successRate > 90 ? '#00cc66' : '#ff9800'} unit="%" />
+                  <MiniBar label="Passed" value={feedback.filter(f => !f.flagged_for_review).length} max={feedback.length} color="#00cc66" unit={` of ${feedback.length}`} />
                   <MiniBar label="Flagged" value={feedback.filter(f => f.flagged_for_review).length} max={feedback.length} color="#ff9800" unit={` of ${feedback.length}`} />
                 </>
               }
             </div>
 
             <SectionHead>Material Breakdown</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16 }}>
               {Object.keys(matBreakdown).length === 0
-                ? <div style={{ fontSize: 10, color: '#2a2a2a' }}>No order data yet</div>
+                ? <div style={{ fontSize: 10, color: T.textDim }}>No order data yet</div>
                 : Object.entries(matBreakdown)
                     .sort(([,a], [,b]) => b - a)
                     .map(([mat, count]) => (
@@ -1487,7 +1517,7 @@ export default function Dashboard() {
             {inventory.length > 0 && (
               <>
                 <SectionHead style={{ marginTop: 16 }}>Filament Stock</SectionHead>
-                <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 10, padding: 16, marginTop: 16 }}>
+                <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16, marginTop: 16 }}>
                   {inventory.map((s, i) => {
                     const pct = s.remaining_pct ?? (s.remaining_g && s.total_g ? Math.round(s.remaining_g / s.total_g * 100) : null)
                     const color = MAT_COLOR[s.material] || '#888'
@@ -1508,9 +1538,9 @@ export default function Dashboard() {
           <SectionHead
             action={
               <button onClick={() => { setShowAddSpool(v => !v); setEditSpool(null) }} style={{
-                fontSize: 9, padding: '4px 12px', background: showAddSpool ? 'transparent' : '#00ff8812',
-                border: `1px solid ${showAddSpool ? '#1a1a1a' : '#00ff8830'}`,
-                color: showAddSpool ? '#333' : '#00ff88', cursor: 'pointer', borderRadius: 5, fontWeight: 600
+                fontSize: 9, padding: '4px 12px', background: showAddSpool ? 'transparent' : '#00cc6612',
+                border: `1px solid ${showAddSpool ? T.border : '#00cc6630'}`,
+                color: showAddSpool ? T.textDim : '#00cc66', cursor: 'pointer', borderRadius: 5, fontWeight: 600
               }}>{showAddSpool ? '✕ Cancel' : '+ Add Spool'}</button>
             }
           >
@@ -1547,22 +1577,22 @@ export default function Dashboard() {
               </div>
 
               {/* Inventory summary */}
-              <div style={{ marginTop: 16, background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: 14, display: 'flex', gap: 24 }}>
+              <div style={{ marginTop: 16, background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: 14, display: 'flex', gap: 24 }}>
                 <div>
-                  <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Total Filament</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#ccc' }}>
+                  <div style={{ fontSize: 9, color: T.textDim, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Total Filament</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: T.text }}>
                     {inventory.reduce((s, sp) => s + (sp.remaining_g || 0), 0).toFixed(0)}g
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Estimated Value</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#00ff88' }}>
+                  <div style={{ fontSize: 9, color: T.textDim, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Estimated Value</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: '#00cc66' }}>
                     ${inventory.reduce((s, sp) => s + (sp.remaining_g || 0) * (sp.cost_per_g || 0.025), 0).toFixed(2)}
                   </div>
                 </div>
                 <div>
-                  <div style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Low Stock</div>
-                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: lowSpools.length > 0 ? '#ff4444' : '#ccc' }}>
+                  <div style={{ fontSize: 9, color: T.textDim, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 3 }}>Low Stock</div>
+                  <div style={{ fontSize: 16, fontWeight: 700, fontFamily: 'monospace', color: lowSpools.length > 0 ? '#ff4444' : T.text }}>
                     {lowSpools.length} spool{lowSpools.length !== 1 ? 's' : ''}
                   </div>
                 </div>
@@ -1583,12 +1613,12 @@ export default function Dashboard() {
               border: `1px solid ${isLocalhost ? 'rgba(255,152,0,0.2)' : 'rgba(0,255,136,0.1)'}`,
               borderRadius: 8, padding: '10px 12px', marginBottom: 14
             }}>
-              <div style={{ fontSize: 9, color: isLocalhost ? '#ff9800' : '#00ff88', marginBottom: 6, fontWeight: 600 }}>
+              <div style={{ fontSize: 9, color: isLocalhost ? '#ff9800' : '#00cc66', marginBottom: 6, fontWeight: 600 }}>
                 {isLocalhost ? '⚠ Not connected — set your Railway URL' : '✓ Connected'}
               </div>
               <input value={apiUrl} onChange={e => updateApiUrl(e.target.value)} placeholder="https://your-app.railway.app"
-                style={{ width: '100%', background: '#0a0a0a', border: `1px solid ${isLocalhost ? 'rgba(255,152,0,0.2)' : 'rgba(0,255,136,0.15)'}`, color: '#ccc', padding: '6px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'monospace' }} />
-              <div style={{ fontSize: 8, color: '#2a2a2a', marginTop: 5, lineHeight: 1.6 }}>
+                style={{ width: '100%', background: T.inputBg, border: `1px solid ${isLocalhost ? 'rgba(255,152,0,0.2)' : 'rgba(0,204,102,0.15)'}`, color: T.text, padding: '6px 10px', borderRadius: 5, fontSize: 10, fontFamily: 'monospace' }} />
+              <div style={{ fontSize: 8, color: T.textDim, marginTop: 5, lineHeight: 1.6 }}>
                 Railway → backend service → Settings → Networking → Public URL
               </div>
             </div>
@@ -1597,8 +1627,8 @@ export default function Dashboard() {
             <DropZone file={slicerFile} onFile={setSlicerFile} />
             {slicerFile && (
               <button onClick={() => setSlicerFile(null)} style={{
-                fontSize: 9, padding: '3px 10px', background: 'transparent', border: '1px solid #1e1e1e',
-                color: '#333', cursor: 'pointer', borderRadius: 4, marginBottom: 14, display: 'block'
+                fontSize: 9, padding: '3px 10px', background: 'transparent', border: `1px solid ${T.border}`,
+                color: T.textDim, cursor: 'pointer', borderRadius: 4, marginBottom: 14, display: 'block'
               }}>✕ clear file</button>
             )}
 
@@ -1608,16 +1638,16 @@ export default function Dashboard() {
                 <button key={name} onClick={() => applyPreset(name)} style={{
                   flex: 1, padding: '6px 4px', fontSize: 9, fontWeight: 600, cursor: 'pointer',
                   letterSpacing: '0.06em', textTransform: 'uppercase', borderRadius: 5,
-                  background: activePreset === name ? '#00ff8815' : 'transparent',
-                  color: activePreset === name ? '#00ff88' : '#2a2a2a',
-                  border: activePreset === name ? '1px solid #00ff8830' : '1px solid #1a1a1a',
+                  background: activePreset === name ? '#00cc6615' : 'transparent',
+                  color: activePreset === name ? '#00cc66' : T.textDim,
+                  border: activePreset === name ? '1px solid #00cc6630' : `1px solid ${T.border}`,
                   transition: 'all 0.15s'
                 }}>{name}</button>
               ))}
             </div>
 
             <SectionHead>Print Setup</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px' }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: '14px 14px 6px' }}>
               <SlicerParam label="Machine">
                 <select value={slicerMachine} onChange={e => setSlicerMachine(e.target.value)} style={selectStyle}>
                   {MACHINES.map(m => <option key={m} value={m}>{m}</option>)}
@@ -1654,13 +1684,13 @@ export default function Dashboard() {
 
           <div>
             <SectionHead>Infill</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
               <SlicerParam label="Density">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input type="range" min={0} max={100} step={5} value={slicerSettings.infillDensity}
                     onChange={e => setSetting('infillDensity', Number(e.target.value))}
-                    style={{ flex: 1, accentColor: '#00ff88' }} />
-                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#00ff88', width: 36, textAlign: 'right' }}>
+                    style={{ flex: 1, accentColor: '#00cc66' }} />
+                  <span style={{ fontSize: 11, fontFamily: 'monospace', color: '#00cc66', width: 36, textAlign: 'right' }}>
                     {slicerSettings.infillDensity}%
                   </span>
                 </div>
@@ -1673,7 +1703,7 @@ export default function Dashboard() {
             </div>
 
             <SectionHead>Walls &amp; Layers</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
               <SlicerParam label="Perimeters">
                 <input type="number" min={1} max={10} value={slicerSettings.walls}
                   onChange={e => setSetting('walls', Number(e.target.value))} style={numStyle} />
@@ -1689,15 +1719,15 @@ export default function Dashboard() {
             </div>
 
             <SectionHead>Support</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 10px', marginBottom: 14 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: '14px 14px 10px', marginBottom: 14 }}>
               <SlicerParam label="Type">
                 <div style={{ display: 'flex', gap: 6 }}>
                   {[['none', 'None'], ['normal', 'Normal'], ['tree', 'Tree (Organic)']].map(([val, lbl]) => (
                     <button key={val} onClick={() => setSetting('supportType', val)} style={{
                       flex: 1, padding: '5px 4px', fontSize: 9, cursor: 'pointer', borderRadius: 4,
                       background: slicerSettings.supportType === val ? '#4a9eff18' : 'transparent',
-                      color: slicerSettings.supportType === val ? '#4a9eff' : '#2a2a2a',
-                      border: slicerSettings.supportType === val ? '1px solid #4a9eff30' : '1px solid #1a1a1a',
+                      color: slicerSettings.supportType === val ? '#4a9eff' : T.textDim,
+                      border: slicerSettings.supportType === val ? '1px solid #4a9eff30' : `1px solid ${T.border}`,
                       fontWeight: slicerSettings.supportType === val ? 700 : 400
                     }}>{lbl}</button>
                   ))}
@@ -1718,7 +1748,7 @@ export default function Dashboard() {
             </div>
 
             <SectionHead>Speed</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: '14px 14px 6px', marginBottom: 14 }}>
               <SlicerParam label="Print Speed">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input type="range" min={20} max={500} step={10} value={slicerSettings.printSpeed}
@@ -1742,7 +1772,7 @@ export default function Dashboard() {
             </div>
 
             <SectionHead>Temperature</SectionHead>
-            <div style={{ background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)', borderRadius: 8, padding: '14px 14px 6px', marginBottom: 18 }}>
+            <div style={{ background: T.card, border: `1px solid ${T.border}`, borderRadius: 8, padding: '14px 14px 6px', marginBottom: 18 }}>
               <SlicerParam label="Nozzle">
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
                   <input type="range" min={150} max={320} step={5} value={slicerSettings.nozzleTemp}
@@ -1767,15 +1797,15 @@ export default function Dashboard() {
 
             <button onClick={triggerSlice} disabled={slicing} style={{
               width: '100%', padding: 13, borderRadius: 7,
-              background: slicing ? '#0d0d0d' : '#00ff88',
-              color: slicing ? '#333' : '#000',
-              border: slicing ? '1px solid #1a1a1a' : 'none',
+              background: slicing ? T.inputBg : '#00cc66',
+              color: slicing ? T.textDim : '#000',
+              border: slicing ? `1px solid ${T.border}` : 'none',
               fontWeight: 800, fontSize: 12, cursor: slicing ? 'default' : 'pointer',
               letterSpacing: '0.1em', textTransform: 'uppercase', transition: 'all 0.2s'
             }}>
               {slicing ? '⏳ Slicing...' : `◈ Slice Now${slicerFile ? ` — ${slicerFile.name.slice(0, 20)}` : ''}`}
             </button>
-            <div style={{ fontSize: 8, color: '#1a1a1a', marginTop: 6, textAlign: 'center' }}>
+            <div style={{ fontSize: 8, color: T.textFaint, marginTop: 6, textAlign: 'center' }}>
               {slicerMachine} · {slicerMaterial} · {slicerSettings.layerHeight}mm · {slicerSettings.infillDensity}% {slicerSettings.infillPattern}
               {slicerSettings.supportType !== 'none' ? ` · ${slicerSettings.supportType} supports` : ''}
             </div>
@@ -1783,5 +1813,6 @@ export default function Dashboard() {
         </div>
       )}
     </div>
+  </ThemeCtx.Provider>
   )
 }

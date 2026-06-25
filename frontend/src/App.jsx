@@ -1,4 +1,6 @@
-import { useEffect, useRef, useState, useCallback } from 'react'
+import { useEffect, useRef, useState, useCallback, createContext, useContext } from 'react'
+
+export const AppThemeCtx = createContext(false)
 import * as THREE from 'three'
 import { OrbitControls } from 'three/examples/jsm/controls/OrbitControls.js'
 import Dashboard from './Dashboard.jsx'
@@ -69,6 +71,7 @@ function ModeTab({ id, label, icon, active, onClick }) {
 }
 
 function App() {
+  const [darkMode, setDarkMode] = useState(() => localStorage.getItem('pd_dark') === '1')
   const [status, setStatus] = useState('starting...')
   const [mode, setMode] = useState('gridfinity')
   const [params, setParams] = useState(DEFAULT_PARAMS)
@@ -90,6 +93,11 @@ function App() {
   const workerRef = useRef(null)
   const meshRef = useRef(null)
   const sceneRef = useRef(null)
+
+  const toggleDark = () => setDarkMode(d => { localStorage.setItem('pd_dark', d ? '0' : '1'); return !d })
+  const A = darkMode
+    ? { panel: '#0a0a0a', chatBg: 'rgba(4,4,4,0.96)', border: 'rgba(255,255,255,0.05)', text: '#e0e0e0', textDim: '#999', textFaint: '#444', inputBg: '#0d0d0d', inputBorder: 'rgba(255,255,255,0.07)', selectColor: '#ccc' }
+    : { panel: '#ffffff', chatBg: 'rgba(248,248,250,0.97)', border: 'rgba(0,0,0,0.08)', text: '#111111', textDim: '#555', textFaint: '#999', inputBg: '#f5f5f7', inputBorder: 'rgba(0,0,0,0.1)', selectColor: '#333' }
 
   const mat = MATERIALS[material] || MATERIALS.PLA
   const estWeightG = params.grid_x * params.grid_y * params.height_u * 3.5
@@ -325,7 +333,8 @@ function App() {
   const isOk = !status.includes('error') && !status.includes('failed')
 
   return (
-    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', fontFamily: "'Inter', system-ui, sans-serif" }}>
+    <AppThemeCtx.Provider value={darkMode}>
+    <div style={{ position: 'relative', width: '100vw', height: '100vh', overflow: 'hidden', fontFamily: "'Inter', system-ui, sans-serif", background: darkMode ? '#080808' : '#f5f5f7' }}>
       <style>{`
         input[type=range] { height: 3px; cursor: pointer }
         select { outline: none }
@@ -335,7 +344,7 @@ function App() {
 
       {mode === 'farm' && (
         <div style={{ position: 'absolute', left: 240, right: 0, top: 0, bottom: 0, zIndex: 5, overflowY: 'auto' }}>
-          <Dashboard />
+          <Dashboard darkMode={darkMode} />
         </div>
       )}
 
@@ -348,19 +357,23 @@ function App() {
       {/* Left panel */}
       <div style={{
         position: 'absolute', top: 0, left: 0, height: '100%', width: 240,
-        background: '#080808', padding: '18px 14px',
-        color: 'white', overflowY: 'auto',
-        borderRight: '1px solid rgba(255,255,255,0.05)'
+        background: A.panel, padding: '18px 14px',
+        color: A.text, overflowY: 'auto',
+        borderRight: `1px solid ${A.border}`
       }}>
-        {/* Branding */}
+        {/* Branding + theme toggle */}
         <div style={{ marginBottom: 18 }}>
-          <div style={{ fontSize: 13, fontWeight: 800, color: '#00ff88', letterSpacing: '-0.01em', marginBottom: 2 }}>MAKER AI</div>
+          <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 2 }}>
+            <div style={{ fontSize: 13, fontWeight: 800, color: '#00cc66', letterSpacing: '-0.01em' }}>MAKER AI</div>
+            <button onClick={toggleDark} title={darkMode ? 'Light mode' : 'Dark mode'} style={{
+              background: darkMode ? '#1a1a1a' : '#f0f0f0', border: `1px solid ${A.border}`,
+              borderRadius: 20, padding: '3px 8px', cursor: 'pointer', fontSize: 12, lineHeight: 1,
+              color: A.text, transition: 'all 0.2s'
+            }}>{darkMode ? '☀' : '🌙'}</button>
+          </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
-            <span style={{
-              width: 5, height: 5, borderRadius: '50%', display: 'inline-block',
-              background: isOk ? '#00ff88' : '#ff4444'
-            }} />
-            <span style={{ fontSize: 9, color: '#333', fontFamily: 'monospace' }}>{status}</span>
+            <span style={{ width: 5, height: 5, borderRadius: '50%', display: 'inline-block', background: isOk ? '#00cc66' : '#ff4444' }} />
+            <span style={{ fontSize: 9, color: A.textDim, fontFamily: 'monospace' }}>{status}</span>
           </div>
         </div>
 
@@ -374,7 +387,7 @@ function App() {
         {mode === 'gridfinity' && (
           <>
             {/* Divider */}
-            <div style={{ fontSize: 8, color: '#222', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 10 }}>Dimensions</div>
+            <div style={{ fontSize: 8, color: A.textDim, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 10 }}>Dimensions</div>
 
             {gridSliders.map(({ key, label, min, max, step }) => (
               <Slider key={key} label={label} value={params[key]} min={min} max={max} step={step}
@@ -383,22 +396,22 @@ function App() {
 
             {/* Size readout */}
             <div style={{
-              background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)',
+              background: A.inputBg, border: `1px solid ${A.border}`,
               borderRadius: 6, padding: '8px 10px', marginBottom: 14, fontFamily: 'monospace'
             }}>
-              <div style={{ fontSize: 9, color: '#333', marginBottom: 4 }}>SIZE</div>
-              <div style={{ fontSize: 11, color: '#aaa' }}>
+              <div style={{ fontSize: 9, color: A.textDim, marginBottom: 4 }}>SIZE</div>
+              <div style={{ fontSize: 11, color: A.textDim }}>
                 {params.grid_x * 42} × {params.grid_y * 42} × {params.height_u * 7} mm
               </div>
             </div>
 
             {/* Material */}
-            <div style={{ fontSize: 8, color: '#222', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>Material &amp; Order</div>
+            <div style={{ fontSize: 8, color: A.textDim, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 8 }}>Material &amp; Order</div>
 
             <div style={{ marginBottom: 10 }}>
-              <div style={{ fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>Material</div>
+              <div style={{ fontSize: 9, color: A.textDim, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>Material</div>
               <select value={material} onChange={e => setMaterial(e.target.value)} style={{
-                width: '100%', background: '#111', border: '1px solid rgba(255,255,255,0.08)',
+                width: '100%', background: A.inputBg, border: `1px solid ${A.inputBorder}`,
                 color: MATERIALS[material].color, padding: '7px 10px', borderRadius: 5, fontSize: 11,
                 fontFamily: 'monospace', cursor: 'pointer'
               }}>
@@ -409,28 +422,28 @@ function App() {
             </div>
 
             <div style={{ marginBottom: 14 }}>
-              <div style={{ fontSize: 9, color: '#444', textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>Quantity</div>
+              <div style={{ fontSize: 9, color: A.textDim, textTransform: 'uppercase', letterSpacing: '0.1em', marginBottom: 5 }}>Quantity</div>
               <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                 <button onClick={() => setQty(q => Math.max(1, q - 1))} style={{
-                  width: 28, height: 28, background: '#111', border: '1px solid #1a1a1a',
-                  color: '#555', cursor: 'pointer', borderRadius: 4, fontSize: 14
+                  width: 28, height: 28, background: A.inputBg, border: `1px solid ${A.border}`,
+                  color: A.textDim, cursor: 'pointer', borderRadius: 4, fontSize: 14
                 }}>−</button>
                 <input type="number" min={1} max={99} value={qty} onChange={e => setQty(Math.max(1, parseInt(e.target.value) || 1))}
                   style={{
-                    flex: 1, background: '#111', border: '1px solid rgba(255,255,255,0.08)',
-                    color: '#ddd', padding: '5px 8px', borderRadius: 4, fontSize: 13,
+                    flex: 1, background: A.inputBg, border: `1px solid ${A.inputBorder}`,
+                    color: A.text, padding: '5px 8px', borderRadius: 4, fontSize: 13,
                     fontFamily: 'monospace', textAlign: 'center'
                   }} />
                 <button onClick={() => setQty(q => Math.min(99, q + 1))} style={{
-                  width: 28, height: 28, background: '#111', border: '1px solid #1a1a1a',
-                  color: '#555', cursor: 'pointer', borderRadius: 4, fontSize: 14
+                  width: 28, height: 28, background: A.inputBg, border: `1px solid ${A.border}`,
+                  color: A.textDim, cursor: 'pointer', borderRadius: 4, fontSize: 14
                 }}>+</button>
               </div>
             </div>
 
             {/* Cost estimate */}
             <div style={{
-              background: 'rgba(0,255,136,0.03)', border: '1px solid rgba(0,255,136,0.08)',
+              background: 'rgba(0,204,102,0.04)', border: '1px solid rgba(0,204,102,0.12)',
               borderRadius: 6, padding: '10px', marginBottom: 14
             }}>
               <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
@@ -441,8 +454,8 @@ function App() {
                   ['Material', material],
                 ].map(([k, v]) => (
                   <div key={k}>
-                    <div style={{ fontSize: 8, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em' }}>{k}</div>
-                    <div style={{ fontSize: 11, color: '#888', fontFamily: 'monospace', marginTop: 2 }}>{v}</div>
+                    <div style={{ fontSize: 8, color: A.textDim, textTransform: 'uppercase', letterSpacing: '0.1em' }}>{k}</div>
+                    <div style={{ fontSize: 11, color: A.textDim, fontFamily: 'monospace', marginTop: 2 }}>{v}</div>
                   </div>
                 ))}
               </div>
@@ -451,9 +464,9 @@ function App() {
             {/* Action buttons */}
             <button onClick={sendToFarm} disabled={farmLoading} style={{
               width: '100%', padding: '10px', borderRadius: 6, marginBottom: 8,
-              background: farmLoading ? '#111' : '#00ff88',
-              color: farmLoading ? '#333' : '#000',
-              border: farmLoading ? '1px solid #1a1a1a' : 'none',
+              background: farmLoading ? A.inputBg : '#00cc66',
+              color: farmLoading ? A.textDim : '#000',
+              border: farmLoading ? `1px solid ${A.border}` : 'none',
               fontWeight: 700, fontSize: 11, cursor: farmLoading ? 'default' : 'pointer',
               letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.2s'
             }}>
@@ -462,25 +475,25 @@ function App() {
 
             <button onClick={exportSTL} disabled={!vertsRef.current} style={{
               width: '100%', padding: '8px', borderRadius: 6, marginBottom: 14,
-              background: 'transparent', color: vertsRef.current ? '#555' : '#2a2a2a',
-              border: `1px solid ${vertsRef.current ? '#1a1a1a' : '#111'}`,
+              background: 'transparent', color: vertsRef.current ? A.textDim : A.textFaint,
+              border: `1px solid ${A.border}`,
               fontWeight: 500, fontSize: 10, cursor: vertsRef.current ? 'pointer' : 'default',
               letterSpacing: '0.08em', textTransform: 'uppercase', transition: 'all 0.2s'
             }}>↓ Export STL</button>
 
             {farmResponse && (
               <div style={{
-                background: farmResponse.error ? 'rgba(255,68,68,0.05)' : farmResponse.flagged_for_review ? 'rgba(255,152,0,0.05)' : 'rgba(0,255,136,0.05)',
-                border: `1px solid ${farmResponse.error ? '#ff444422' : farmResponse.flagged_for_review ? '#ff980022' : '#00ff8822'}`,
+                background: farmResponse.error ? 'rgba(255,68,68,0.05)' : farmResponse.flagged_for_review ? 'rgba(255,152,0,0.05)' : 'rgba(0,204,102,0.05)',
+                border: `1px solid ${farmResponse.error ? '#ff444422' : farmResponse.flagged_for_review ? '#ff980022' : '#00cc6622'}`,
                 borderRadius: 6, padding: '10px', fontSize: 10, fontFamily: 'monospace'
               }}>
                 {farmResponse.error
                   ? <div style={{ color: '#ff4444' }}>{farmResponse.error}</div>
                   : <>
-                    <div style={{ color: farmResponse.flagged_for_review ? '#ff9800' : '#00ff88', fontWeight: 700, marginBottom: 6 }}>
+                    <div style={{ color: farmResponse.flagged_for_review ? '#ff9800' : '#00cc66', fontWeight: 700, marginBottom: 6 }}>
                       {farmResponse.flagged_for_review ? '⚠ FLAGGED FOR REVIEW' : '✓ ACCEPTED'}
                     </div>
-                    <div style={{ color: '#555', lineHeight: 1.8 }}>
+                    <div style={{ color: A.textDim, lineHeight: 1.8 }}>
                       {farmResponse.actual_time_seconds != null && <div>time: {Math.round(farmResponse.actual_time_seconds / 60)}min</div>}
                       {farmResponse.actual_weight_grams != null && <div>weight: {farmResponse.actual_weight_grams}g</div>}
                     </div>
@@ -493,21 +506,21 @@ function App() {
 
         {mode === 'vase' && (
           <>
-            <div style={{ fontSize: 8, color: '#222', textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 10 }}>Vase Parameters</div>
+            <div style={{ fontSize: 8, color: A.textDim, textTransform: 'uppercase', letterSpacing: '0.12em', marginBottom: 10 }}>Vase Parameters</div>
             {vaseSliders.map(({ key, label, min, max, step }) => (
               <Slider key={key} label={label} value={vaseParams[key]} min={min} max={max} step={step}
                 onChange={v => handleVaseChange(key, v)} accent="#aa44ff" />
             ))}
             <div style={{
-              background: 'rgba(255,255,255,0.02)', border: '1px solid rgba(255,255,255,0.05)',
-              borderRadius: 6, padding: '8px 10px', marginBottom: 14, fontFamily: 'monospace', fontSize: 10, color: '#444'
+              background: A.inputBg, border: `1px solid ${A.border}`,
+              borderRadius: 6, padding: '8px 10px', marginBottom: 14, fontFamily: 'monospace', fontSize: 10, color: A.textDim
             }}>
               r(θ) = {vaseParams.base_r} + {vaseParams.amplitude}·sin({vaseParams.frequency}θ)
             </div>
             <button onClick={exportSTL} disabled={!vertsRef.current} style={{
               width: '100%', padding: '9px', borderRadius: 6,
-              background: 'transparent', color: vertsRef.current ? '#aa44ff' : '#2a2a2a',
-              border: `1px solid ${vertsRef.current ? '#aa44ff44' : '#111'}`,
+              background: 'transparent', color: vertsRef.current ? '#aa44ff' : A.textFaint,
+              border: `1px solid ${vertsRef.current ? '#aa44ff44' : A.border}`,
               fontWeight: 600, fontSize: 10, cursor: vertsRef.current ? 'pointer' : 'default',
               letterSpacing: '0.08em', textTransform: 'uppercase'
             }}>↓ Export STL</button>
@@ -519,25 +532,26 @@ function App() {
       {mode === 'gridfinity' && (
         <div style={{
           position: 'absolute', bottom: 0, left: 240, right: 260,
-          background: 'rgba(0,0,0,0.7)', backdropFilter: 'blur(8px)',
-          padding: '10px 20px', color: 'white', fontFamily: 'monospace'
+          background: darkMode ? 'rgba(0,0,0,0.75)' : 'rgba(245,245,247,0.92)', backdropFilter: 'blur(8px)',
+          padding: '10px 20px', color: A.text, fontFamily: 'monospace',
+          borderTop: `1px solid ${A.border}`
         }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 5 }}>
-            <span style={{ fontSize: 9, color: '#333', textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>
+            <span style={{ fontSize: 9, color: A.textDim, textTransform: 'uppercase', letterSpacing: '0.1em', whiteSpace: 'nowrap' }}>
               History {historyIdx + 1}/{history.length}
             </span>
             <input type="range" min={0} max={history.length - 1} step={1} value={historyIdx}
               onChange={e => handleScrub(parseInt(e.target.value))}
-              style={{ flex: 1, accentColor: '#00ff88' }} />
+              style={{ flex: 1, accentColor: '#00cc66' }} />
           </div>
-          <div style={{ fontSize: 9, color: '#2a2a2a' }}>
+          <div style={{ fontSize: 9, color: A.textFaint }}>
             {history[historyIdx] && (
               <>
-                <span style={{ color: '#444' }}>
+                <span style={{ color: A.textDim }}>
                   {history[historyIdx].grid_x}×{history[historyIdx].grid_y} | h:{history[historyIdx].height_u} | wall:{history[historyIdx].wall}mm
                 </span>
                 {history[historyIdx].msg && (
-                  <span style={{ color: '#00ff8844', marginLeft: 10 }}>"{history[historyIdx].msg}"</span>
+                  <span style={{ color: '#00cc6644', marginLeft: 10 }}>"{history[historyIdx].msg}"</span>
                 )}
               </>
             )}
@@ -548,17 +562,17 @@ function App() {
       {/* Chat panel */}
       <div style={{
         position: 'absolute', top: 0, right: 0, width: 260, height: '100%',
-        background: 'rgba(4,4,4,0.92)', display: mode === 'farm' ? 'none' : 'flex',
-        flexDirection: 'column', fontFamily: 'monospace', color: 'white', zIndex: 10,
-        borderLeft: '1px solid rgba(255,255,255,0.04)'
+        background: A.chatBg, display: mode === 'farm' ? 'none' : 'flex',
+        flexDirection: 'column', fontFamily: 'monospace', color: A.text, zIndex: 10,
+        borderLeft: `1px solid ${A.border}`
       }}>
-        <div style={{ padding: '16px 14px', borderBottom: '1px solid rgba(255,255,255,0.05)' }}>
-          <div style={{ fontSize: 9, fontWeight: 700, color: '#00ff88', letterSpacing: '0.15em', textTransform: 'uppercase' }}>AI Assistant</div>
-          <div style={{ fontSize: 9, color: '#2a2a2a', marginTop: 3 }}>natural language → geometry</div>
+        <div style={{ padding: '16px 14px', borderBottom: `1px solid ${A.border}` }}>
+          <div style={{ fontSize: 9, fontWeight: 700, color: '#00cc66', letterSpacing: '0.15em', textTransform: 'uppercase' }}>AI Assistant</div>
+          <div style={{ fontSize: 9, color: A.textFaint, marginTop: 3 }}>natural language → geometry</div>
         </div>
         <div style={{ flex: 1, overflowY: 'auto', padding: '12px' }}>
           {chatMessages.length === 0 && (
-            <div style={{ color: '#2a2a2a', fontSize: 10, lineHeight: 2 }}>
+            <div style={{ color: A.textFaint, fontSize: 10, lineHeight: 2 }}>
               {['make it 3 units wide', 'make it 2 deep', 'set height to 5', 'wall 2.0'].map(s => (
                 <div key={s} style={{ cursor: 'pointer', padding: '2px 6px', borderRadius: 3 }}
                   onClick={() => { setChatInput(s) }}
@@ -569,43 +583,43 @@ function App() {
           {chatMessages.map((m, i) => (
             <div key={i} style={{ marginBottom: 10, textAlign: m.role === 'user' ? 'right' : 'left' }}>
               <span style={{
-                background: m.role === 'user' ? '#00ff8822' : '#111',
-                color: m.role === 'user' ? '#00ff88' : '#888',
-                border: `1px solid ${m.role === 'user' ? '#00ff8833' : '#1a1a1a'}`,
+                background: m.role === 'user' ? '#00cc6618' : A.inputBg,
+                color: m.role === 'user' ? '#00cc66' : A.textDim,
+                border: `1px solid ${m.role === 'user' ? '#00cc6633' : A.border}`,
                 padding: '6px 10px', borderRadius: m.role === 'user' ? '10px 10px 2px 10px' : '10px 10px 10px 2px',
                 fontSize: 11, display: 'inline-block', maxWidth: '90%', lineHeight: 1.5
               }}>{m.content}</span>
             </div>
           ))}
           {chatLoading && (
-            <div style={{ color: '#333', fontSize: 10, fontStyle: 'italic' }}>thinking...</div>
+            <div style={{ color: A.textFaint, fontSize: 10, fontStyle: 'italic' }}>thinking...</div>
           )}
           {pendingAction && !chatLoading && (
             <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
               <button onClick={() => { setChatInput('yes'); setTimeout(sendChat, 50) }}
-                style={{ flex: 1, background: '#00ff8818', color: '#00ff88', border: '1px solid #00ff8833', padding: 8, fontSize: 11, cursor: 'pointer', borderRadius: 4 }}>
+                style={{ flex: 1, background: '#00cc6618', color: '#00cc66', border: '1px solid #00cc6633', padding: 8, fontSize: 11, cursor: 'pointer', borderRadius: 4 }}>
                 ✓ Yes
               </button>
               <button onClick={() => { setChatInput('no'); setTimeout(sendChat, 50) }}
-                style={{ flex: 1, background: '#111', color: '#555', border: '1px solid #1a1a1a', padding: 8, fontSize: 11, cursor: 'pointer', borderRadius: 4 }}>
+                style={{ flex: 1, background: A.inputBg, color: A.textDim, border: `1px solid ${A.border}`, padding: 8, fontSize: 11, cursor: 'pointer', borderRadius: 4 }}>
                 ✕ No
               </button>
             </div>
           )}
         </div>
-        <div style={{ padding: '10px 12px', borderTop: '1px solid rgba(255,255,255,0.04)', display: 'flex', gap: 6 }}>
+        <div style={{ padding: '10px 12px', borderTop: `1px solid ${A.border}`, display: 'flex', gap: 6 }}>
           <input
             value={chatInput}
             onChange={e => setChatInput(e.target.value)}
             onKeyDown={e => e.key === 'Enter' && sendChat()}
             placeholder="describe your design..."
             style={{
-              flex: 1, background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.06)',
-              color: '#ccc', padding: '8px 10px', fontSize: 11, borderRadius: 5
+              flex: 1, background: A.inputBg, border: `1px solid ${A.inputBorder}`,
+              color: A.text, padding: '8px 10px', fontSize: 11, borderRadius: 5
             }}
           />
           <button onClick={sendChat} style={{
-            background: '#00ff88', color: '#000', border: 'none',
+            background: '#00cc66', color: '#000', border: 'none',
             padding: '8px 12px', cursor: 'pointer', fontWeight: 700, fontSize: 12, borderRadius: 5
           }}>↑</button>
         </div>

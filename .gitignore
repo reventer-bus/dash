@@ -80,3 +80,12 @@ storage/
 *.crt
 secrets/
 .env*
+
+# Design studio assets (removed in commit 79dcff6 + cleaned in dash push)
+frontend/public/opencascade.*
+frontend/public/occWorker.js
+frontend/public/test.html
+frontend/src/occ/
+frontend/src/occWorker.js
+# Any other large WASM blobs — should never re-enter the repo
+*.wasm

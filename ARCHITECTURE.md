@@ -1,7 +1,8 @@
-# printdash — Architecture
+# FOFUS Manufacturing OS — Architecture
 
-> This document describes what is built, how it fits together, and what is left to do.
-> Keep this updated as features are added or changed.
+> Describes what is built, how it connects, and what each component does.
+> Update this file when a service is added, moved, or replaced.
+> GNI Labs LLP · GST 32ABBFG541K1ZM · Irinjalakuda, Thrissur, Kerala
 
 ---
 
@@ -9,40 +10,54 @@
 
 ```
 dash/
-├── frontend/          ← React/Vite dashboard (deployed to Vercel)
+├── frontend/          ← React/Vite partner Kanban dashboard (Vercel)
 │   ├── src/
-│   │   ├── App.jsx       ← Login gate + root
-│   │   └── Dashboard.jsx ← Entire dashboard UI (tabs, kanban, analytics)
-│   ├── vercel.json       ← SPA rewrite rule
+│   │   ├── App.jsx          ← Login gate + root
+│   │   └── Dashboard.jsx    ← Kanban, analytics, printers, slicer, inventory
+│   ├── vercel.json
 │   └── package.json
 │
-├── backend/           ← FastAPI server (deployed to Railway)
+├── backend/           ← FastAPI server (Ubuntu + Tailscale Funnel)
 │   ├── app/
 │   │   ├── main.py                    ← App init, CORS, route registration
 │   │   ├── api/v1/endpoints/
-│   │   │   ├── farm.py                ← Orders, feedback, inventory, messages, photos
+│   │   │   ├── farm.py                ← Orders, messages, photos, errors, inventory
 │   │   │   ├── shopify.py             ← Webhook receiver + checkout creator
 │   │   │   ├── printers.py            ← Printer CRUD + live poll
 │   │   │   ├── partners.py            ← Partner management
-│   │   │   ├── auth.py                ← Register/login (JWT — not yet used by frontend)
+│   │   │   ├── auth.py                ← Register/login (JWT stub — not yet wired to frontend)
 │   │   │   ├── slicer.py              ← OrcaSlicer CLI wrapper
 │   │   │   ├── ai.py                  ← AI design chat
 │   │   │   ├── pricing.py             ← Quote engine
 │   │   │   └── files.py               ← File uploads
 │   │   ├── services/
-│   │   │   ├── farm_store.py          ← In-memory store + JSONL persistence
+│   │   │   ├── farm_store.py          ← In-memory store + JSONL persistence (replace with PostgreSQL)
 │   │   │   ├── printer_connect.py     ← Bambu/Moonraker/OctoPrint polling
 │   │   │   ├── orca_slicer.py         ← Slicer process wrapper
 │   │   │   └── quote_engine.py        ← Price calculation logic
 │   │   └── models/
 │   │       ├── order.py               ← OrderStatus enum
 │   │       └── printer.py             ← PrinterStatus enum
+│   ├── setup-ubuntu.sh                ← One-shot Ubuntu server setup
+│   ├── update.sh                      ← Pull latest + restart service
+│   ├── printdash-backend.service      ← Systemd unit (uvicorn on port 8000)
 │   └── requirements.txt
 │
-├── customer/          ← Customer-facing Next.js storefront (Clerk auth)
-│   └── app/ ...
+├── customer/          ← Next.js customer storefront (Clerk auth)
+│   └── app/
+│       ├── page.tsx            ← Home + product catalog
+│       ├── upload/page.tsx     ← STL upload → quote → Shopify checkout
+│       ├── account/            ← Order history, quotes
+│       ├── franchise/page.tsx  ← Franchise application page
+│       └── products/page.tsx   ← Readymade product catalog
 │
 ├── pipeline/          ← n8n workflow specs (JSON)
+│   └── farm_intake_workflow.json
+│
+├── pi/                ← (PLANNED) Raspberry Pi node agent setup
+│   ├── setup-pi.sh
+│   ├── docker-compose.yml
+│   └── .env.example
 │
 ├── PLAN.md            ← Feature roadmap (what to build)
 └── ARCHITECTURE.md    ← This file (how it's built)
@@ -52,90 +67,132 @@ dash/
 
 ## Deployment
 
-| Service | Platform | URL |
-|---------|----------|-----|
-| Frontend (printdash) | Vercel | `101-3ddevine.platform.fofus.in` |
-| Backend API | Ubuntu server + Tailscale Funnel | `https://<hostname>.<tailnet>.ts.net` |
-| Shopify store | Shopify | `store.fofus.in` |
-| Customer portal | Vercel | (separate project) |
+| Service | Platform | URL / Location | Status |
+|---------|----------|----------------|--------|
+| Partner dashboard (printdash) | Vercel | `101-3ddevine.platform.fofus.in` | ✅ Live |
+| Backend API | Ubuntu server + Tailscale Funnel | `https://<hostname>.<tailnet>.ts.net` | ✅ Live |
+| Shopify store | Shopify | `store.fofus.in` | ✅ Live |
+| n8n workflows | n8n Cloud | `gni123.app.n8n.cloud` | ✅ Live (Shopify cred pending) |
+| Slicer (OrcaSlicer CLI) | Hetzner CX32 VPS | Docker container | ✅ Live |
+| File storage | Cloudflare R2 | `fofus-gcode` bucket | ✅ Live |
+| WhatsApp automation | AiSensy | `aisensy.com` | ✅ Live |
+| Customer portal | Vercel | `fofus.in` / `customer.fofus.in` | 🔲 Partial |
+| Admin panel | Vercel | `business.fofus.in` | 🔲 Not built |
+| Customer tracking | Vercel | `track.fofus.in` | 🔲 Not built |
+| Database | PostgreSQL | Railway or Ubuntu Docker | ⚠️ Needed |
+| Mesh VPN | Tailscale | `fofus-mesh` tailnet | 🔲 Set up for backend; Pi nodes TBD |
 
 ### Backend Hosting (Ubuntu + Tailscale Funnel)
 
-The backend runs as a systemd service on a local Ubuntu 22.04/24.04 server and is exposed
-publicly via Tailscale Funnel (no open firewall ports required).
-
-```
-backend/
-├── setup-ubuntu.sh           ← Run once as root on a fresh Ubuntu server
-├── update.sh                 ← Pull latest + restart (run as root after deploys)
-└── printdash-backend.service ← Systemd unit (copied to /etc/systemd/system/)
-```
-
-**First-time setup:**
 ```bash
-sudo bash setup-ubuntu.sh
-# Then fill in tokens:
-sudo nano /etc/printdash/env
-sudo systemctl restart printdash-backend
-# Connect Tailscale and enable Funnel:
+# First-time setup (run as root on Ubuntu 22.04/24.04):
+sudo bash backend/setup-ubuntu.sh
+
+# Fill in secrets:
+sudo nano /etc/printdash/env    # SHOPIFY_DOMAIN, SHOPIFY_ADMIN_TOKEN, SHOPIFY_WEBHOOK_SECRET
+
+# Expose to internet via Tailscale Funnel:
 sudo tailscale up
 sudo tailscale funnel --bg 8000
-# Get the public URL:
-tailscale funnel status
-# → https://<hostname>.<tailnet>.ts.net
-```
+tailscale funnel status          # → https://<hostname>.<tailnet>.ts.net
 
-**Updating after a code push:**
-```bash
+# Update after code push:
 sudo bash /opt/printdash-backend/backend/update.sh
+
+# Service logs:
+journalctl -u printdash-backend -f
 ```
 
-Data is persisted to `/var/lib/printdash/spec/` (set via `MAKER_AI_DIR` env var), which survives service restarts.
-
-### Domain Convention
-```
-{client_id}-{partner_slug}.platform.fofus.in
-DNS: CNAME 101-3ddevine.platform → cname.vercel-dns.com (GoDaddy)
-```
-
-### Auth
-Frontend login (App.jsx) — hardcoded credentials, checked client-side, session in `sessionStorage`.
-```
-Username: 101
-Password: 101_3DDEVINE
-Env override: VITE_LOGIN_USER / VITE_LOGIN_PASS
-```
-> ⚠️ This is partner-level auth only. Admin auth not yet implemented in the frontend.
+Data persists to `/var/lib/printdash/spec/` via `MAKER_AI_DIR` env var.
 
 ---
 
-## Data Flow
+## Full System Architecture
 
-### Shopify Order → Kanban
+```
+┌──────────────────────────────────────────────────────────────────┐
+│                   FOFUS MANUFACTURING OS                         │
+└──────────────────────────────────────────────────────────────────┘
+
+CUSTOMER LAYER
+  store.fofus.in (Shopify) ──► orders/paid webhook ──► n8n
+  WhatsApp ──────────────────► AiSensy webhook ──────► n8n
+  fofus.in (Next.js) ────────► STL upload ───────────► Backend API
+
+CLOUD INTELLIGENCE LAYER  (Hetzner CX32 VPS)
+  n8n ──► Claude API         (MAKER AI — intent parse, SKU resolve)
+       ──► OrcaSlicer CLI    (Docker — STL → G-code with per-SKU profiles)
+       ──► Cloudflare R2     (G-code + STL + asset storage)
+       ──► FDM Monster       (job dispatch queue → Pi nodes)
+       ──► FOFUS Backend     (order creation, status updates)
+
+PARTNER LAYER  (Vercel)
+  printdash ──► 7-stage Kanban, photos, messages, analytics
+  business.fofus.in ──► Admin panel (all orders, all partners) [PLANNED]
+
+BACKEND API  (Ubuntu + Tailscale Funnel)
+  FastAPI on port 8000
+  ├── /api/v1/farm/*      Orders, messages, photos, inventory
+  ├── /api/v1/shopify/*   Webhook, checkout
+  ├── /api/v1/printers/*  Printer CRUD + live poll
+  ├── /api/v1/auth/*      JWT login (stub)
+  └── /api/v1/nodes/*     Pi heartbeat [PLANNED]
+
+EDGE LAYER  (Raspberry Pi 4B per franchise)
+  ├── FDM Monster agent   (job polling → Bambu MQTT)
+  ├── FilaOps daemon      (spool weight → /api/v1/filament/log)
+  ├── Bambu LAN bridge    (MQTT port 8883, subscribes device/[SN]/report)
+  ├── Heartbeat agent     (60s ping to backend)
+  └── Tailscale VPN       (joins fofus-mesh, HQ remote access)
+
+PRINTER LAYER  (Local LAN per franchise)
+  Bambu A1 / P1S / X1C ──► MQTT (LAN mode, port 8883)
+  Metrics: progress%, time_remaining, chamber_temp, filament_used_g
+
+DISPATCH LAYER
+  Print complete ──► Pi webhook ──► n8n
+                 ──► Shopify fulfillment update
+                 ──► Shiprocket label + courier pickup
+                 ──► AiSensy WhatsApp to customer
+```
+
+---
+
+## Data Flow — Shopify Order to Dispatch
 
 ```
 1. Customer pays on store.fofus.in
-2. Shopify fires orders/paid webhook → POST /api/v1/shopify/webhook
-3. _process_order() extracts: customer, material, line items, total
-4. farm_store.add_shopify_order() writes to in-memory _orders list + appends to orders.jsonl
-5. Dashboard polls GET /api/v1/farm/status every 5s
-6. Order appears in NEW column of Kanban board
-7. Partner advances through stages → PATCH /api/v1/farm/orders/{id}
-8. At DISPATCH: partner can push tracking back → POST /api/v1/farm/orders/{id}/shopify-push
+2. Shopify fires orders/paid → POST /api/v1/shopify/webhook
+3. _process_order() extracts: customer, material, line items, total, source
+4. farm_store.add_shopify_order() → in-memory list + orders.jsonl
+5. printdash polls GET /api/v1/farm/status every 5s
+6. Order appears in NEW column
+7. Partner advances stages → PATCH /api/v1/farm/orders/{id}
+8. At DISPATCH → partner fills tracking → POST /api/v1/farm/orders/{id}/shopify-push
+9. Backend calls Shopify Admin API to mark fulfilled + notify customer
 ```
 
-### Partner Kanban Actions
+## Data Flow — Partner Communication
 
 ```
-Advance stage  →  PATCH /api/v1/farm/orders/{id}   { status: "AI_PREP" }
-Send message   →  POST  /api/v1/farm/orders/{id}/messages  { text, from_role, from_label }
-Upload photo   →  POST  /api/v1/farm/orders/{id}/photos    (multipart form, stored as base64)
-Mark error     →  POST  /api/v1/farm/orders/{id}/print-error  { has_error: true }
+Partner sends message → POST /api/v1/farm/orders/{id}/messages
+                     → stored in order.messages[]
+                     → [TODO] notify admin via email/WhatsApp
+Admin reads in dashboard (currently must open card)
+Admin reply → [TODO] POST /api/v1/admin/messages/{id}/reply
+```
+
+## Data Flow — Photo Upload
+
+```
+Partner uploads photo → POST /api/v1/farm/orders/{id}/photos (multipart)
+                     → currently: convert to base64 data URI, store in order.photos[]
+                     → [TODO] upload to Cloudflare R2, store URL instead
 ```
 
 ---
 
-## API Endpoints (Current)
+## API Endpoints
 
 ### Farm / Orders
 | Method | Path | Description |
@@ -144,13 +201,13 @@ Mark error     →  POST  /api/v1/farm/orders/{id}/print-error  { has_error: tru
 | GET | `/api/v1/farm/queue` | Active orders (not DISPATCH/LOGGED/CANCELLED) |
 | POST | `/api/v1/farm/orders` | Create manual order |
 | PATCH | `/api/v1/farm/orders/{id}` | Update order (status, notes, tracking, etc.) |
-| DELETE | `/api/v1/farm/orders/{id}` | Cancel order (sets status=CANCELLED) |
+| DELETE | `/api/v1/farm/orders/{id}` | Cancel order |
 | POST | `/api/v1/farm/orders/{id}/messages` | Add message to order thread |
-| POST | `/api/v1/farm/orders/{id}/photos` | Upload photo (stored as base64 in order) |
+| POST | `/api/v1/farm/orders/{id}/photos` | Upload photo (base64 in order) |
 | POST | `/api/v1/farm/orders/{id}/print-error` | Mark/unmark print error |
-| POST | `/api/v1/farm/orders/{id}/assign-partner` | Assign order to a partner |
+| POST | `/api/v1/farm/orders/{id}/assign-partner` | Assign order to partner |
 | GET | `/api/v1/farm/orders/by-partner/{id}` | All orders for a partner |
-| POST | `/api/v1/farm/orders/{id}/shopify-push` | Push tracking/fulfillment to Shopify |
+| POST | `/api/v1/farm/orders/{id}/shopify-push` | Push tracking to Shopify |
 | POST | `/api/v1/farm/queue/{id}/assign` | Assign job to printer |
 | GET | `/api/v1/farm/partners` | Partner list with order stats |
 | GET | `/api/v1/farm/inventory` | Filament spools |
@@ -175,6 +232,15 @@ Mark error     →  POST  /api/v1/farm/orders/{id}/print-error  { has_error: tru
 | POST | `/api/v1/printers/{id}/pause` | Pause print |
 | POST | `/api/v1/printers/{id}/resume` | Resume print |
 
+### Planned (not yet built)
+| Method | Path | Description |
+|--------|------|-------------|
+| POST | `/api/v1/auth/login` | JWT login with role claim |
+| POST | `/api/v1/nodes/register` | Pi self-registers on first boot |
+| POST | `/api/v1/nodes/heartbeat` | 60s Pi heartbeat |
+| POST | `/api/v1/filament/log` | FilaOps logs consumption per job |
+| GET | `/api/v1/orders/{id}/public` | Public order status for track page |
+
 ---
 
 ## Order Data Model
@@ -194,7 +260,7 @@ Mark error     →  POST  /api/v1/farm/orders/{id}/print-error  { has_error: tru
   "total_inr": 450.00,
   "note": "Customer note from checkout",
   "line_items": [
-    { "title": "Custom 3D Print", "sku": "FOFUS-CUSTOM-PLA", "qty": 1, "shopify_line_item_id": 789 }
+    { "title": "Custom 3D Print", "sku": "FOFUS-CUSTOM-PLA", "qty": 1, "price": "450.00", "shopify_line_item_id": 789 }
   ],
   "assigned_partner": "ptr_101",
   "assigned_partner_name": "3D Devine",
@@ -224,95 +290,160 @@ Mark error     →  POST  /api/v1/farm/orders/{id}/print-error  { has_error: tru
 
 ## Data Persistence
 
-**Current (in-memory + JSONL):**
+**Current (in-memory + JSONL on Ubuntu):**
 ```
-/tmp/maker-ai/spec/
-├── orders.jsonl      ← one JSON object per line, appended on create, rewritten on update
-├── feedback.jsonl    ← slice results from n8n
-├── spools.jsonl      ← filament inventory
-└── printers.jsonl    ← registered printers + connection config
+/var/lib/printdash/spec/      ← set via MAKER_AI_DIR env var
+├── orders.jsonl              ← one JSON object per line, rewritten on update
+├── feedback.jsonl
+├── spools.jsonl
+└── printers.jsonl
 ```
-> ⚠️ Data lives in Railway's ephemeral `/tmp`. A redeploy or restart clears it.
-> This is fine for development but MUST be replaced before production scale.
+Survives service restarts. Does NOT survive disk failure. No concurrent-write safety.
 
-**Needed (persistent):**
-- Railway PostgreSQL addon
-- SQLAlchemy models + Alembic migrations
-- Orders, messages, photos (file refs), printers, inventory, partners tables
-- Photo files → Cloudflare R2 or Railway volume
+**Needed (PostgreSQL):**
+```sql
+-- Core tables
+orders          (id, status, source, customer_*, material, total_inr, ...)
+order_messages  (id, order_id FK, text, from_role, from_label, ts, read)
+order_photos    (id, order_id FK, r2_url, filename, ts, type)
+order_history   (id, order_id FK, event, from_status, to_status, at)
+printers        (id, name, type, host, api_key, ...)
+inventory       (id, material, color, remaining_g, ...)
+partners        (id, name, franchise_id, territory_pincodes text[], ...)
+nodes           (id, franchise_id, pi_serial, last_seen, ...)
+```
+
+Archive code at `repo/backend/app/core/database.py` and `repo/backend/app/core/config.py` has async SQLAlchemy + `pydantic-settings` ready to port.
 
 ---
 
-## Work Status
+## Auth
 
-### ✅ Done
+**Current:** Hardcoded credentials checked client-side, session in `sessionStorage`.
+```
+Username: 101
+Password: 101_3DDEVINE
+Env override: VITE_LOGIN_USER / VITE_LOGIN_PASS
+```
 
-| Area | What was built |
-|------|---------------|
-| Auth | Login screen in App.jsx (sessionStorage, env-var creds) |
-| Kanban | 7-stage board, drag+drop, stage advance, partner restrictions |
-| Shopify | Webhook receiver, readymade + custom product support |
-| Messages | Per-order thread, partner/admin labels, unread badge |
-| Photos | Upload + base64 storage + thumbnail preview on card |
-| Print errors | Mark/unmark, red card highlight, stats card, analytics panel |
-| Analytics | Fleet utilization, material breakdown, error rate, filament stock |
-| Printers | Bambu LAN / Moonraker / OctoPrint live poll + CRUD |
-| Inventory | Filament spool tracking, low-stock alerts |
-| Slicer | OrcaSlicer presets, file upload |
-| Domain | `101-3ddevine.platform.fofus.in` on Vercel + GoDaddy CNAME |
-| Shopify push | ⬆ Shopify button on DISPATCH cards — form for company/tracking/URL/notify, calls shopify-push API |
-| Partner assign | 👤 Assign button on every card — inline form accepts partner name or id:name, calls assign-partner API |
+**Needed (JWT RBAC):**
+```
+POST /api/v1/auth/login → { access_token, role, partner_id }
 
----
-
-### 🔲 To Do
-
-| Priority | Area | What's needed |
-|----------|------|---------------|
-| HIGH | Role-based auth | Admin vs partner login, admin sees all orders, partner sees only theirs |
-| HIGH | Persistent DB | PostgreSQL on Railway, SQLAlchemy models, Alembic migrations |
-| HIGH | Photo storage | Replace base64 with Cloudflare R2 / S3 URLs |
-| HIGH | Admin message reply | Admin panel where admin can read and reply to partner messages |
-| HIGH | Notification on message | Email / WhatsApp / Telegram to admin when partner sends message |
-| MED | Customer tracking page | `track.fofus.in/{order_id}` — public, no login |
-| MED | Auto-fulfillment at DISPATCH | When stage = DISPATCH → auto push tracking to Shopify |
-| MED | Order search + filter | Search by name/order/customer, filter by date/partner/status |
-| MED | STL file attachment | Partner/customer uploads print file, linked to order card |
-| MED | Reprint flow | Error → auto-create reprint order at AI_PREP |
-| LOW | Bulk operations | Select many cards → advance all / assign all / export |
-| LOW | Partner reports | Weekly summary: orders done, error rate, avg stage time |
-| LOW | Maintenance tracker | Log + reset printer maintenance events |
-| LOW | Mobile view | Responsive layout for partner checking from phone at printer |
-| LOW | WhatsApp alerts | New order → WhatsApp to partner via Twilio |
-| LOW | Multi-partner onboarding | Automated flow: create client ID → set creds → provision subdomain |
+Roles:
+  super_admin      — all orders, all partners, all settings (HQ / Akshay Jojo)
+  franchise_admin  — own territory orders, own printers, own node
+  field_verifier   — KYC queue only, no orders
+  partner          — assigned jobs only, read + advance only
+```
 
 ---
 
 ## Environment Variables
 
-### Backend (Railway)
+### Backend (`/etc/printdash/env`)
 ```
 SHOPIFY_DOMAIN          store.fofus.in
 SHOPIFY_ADMIN_TOKEN     shpat_xxx...
 SHOPIFY_WEBHOOK_SECRET  whsec_xxx...
-MAKER_AI_DIR            /data/maker-ai   (persistent volume path when added)
-DATABASE_URL            postgresql://... (when DB is added)
+MAKER_AI_DIR            /var/lib/printdash
+DATABASE_URL            postgresql+asyncpg://...  (when DB is added)
+R2_BUCKET               fofus-gcode
+R2_ACCOUNT_ID           xxx
+R2_ACCESS_KEY           xxx
+R2_SECRET_KEY           xxx
+SECRET_KEY              (JWT signing key, openssl rand -hex 32)
 ```
 
 ### Frontend (Vercel)
 ```
-VITE_API_URL            https://your-backend.railway.app
+VITE_API_URL            https://<hostname>.<tailnet>.ts.net
 VITE_LOGIN_USER         101
 VITE_LOGIN_PASS         101_3DDEVINE
 ```
+
+### Raspberry Pi Node (`.env` per franchise)
+```
+FRANCHISE_ID            FOFUS-KL-001
+NODE_API_KEY            fk_live_xxxx          (issued by admin panel)
+FOFUS_API_URL           https://<tailscale-url>
+R2_BUCKET               fofus-gcode
+BAMBU_LOCAL_KEY         xxxx                  (from Bambu Studio developer mode)
+HEARTBEAT_INTERVAL      60
+TERRITORY_PINCODES      680121,680122,680123
+```
+
+---
+
+## RBAC Matrix
+
+| Resource | Super Admin | Franchise Admin | Field Verifier | Partner |
+|----------|-------------|-----------------|----------------|---------|
+| All orders | R/W | R (own territory) | — | R (assigned jobs) |
+| Printers | R/W | R/W (own) | — | R (own) |
+| KYC documents | R/W | — | R/W | R (own) |
+| Revenue / analytics | R/W | R (own) | — | R (own earnings) |
+| Territory mapping | R/W | R (own) | — | — |
+| Filament orders | R/W | R + Request | — | Log only |
+| System settings | R/W | — | — | — |
+| RBAC / roles | R/W | — | — | — |
+| Slicer profiles | R/W | R | — | — |
+| Audit log | R/W | R (own) | R (own) | R (own) |
+| Pi SSH (Tailscale) | R/W | — | — | — |
 
 ---
 
 ## Adding a New Partner
 
-1. Assign next client ID (e.g. 102)
-2. Add domain in Vercel: `102-partnername.platform.fofus.in`
-3. Add CNAME in GoDaddy: `102-partnername.platform` → `cname.vercel-dns.com`
-4. Set env vars in Vercel deployment: `VITE_LOGIN_USER=102`, `VITE_LOGIN_PASS=102_PARTNERNAME`
-5. Update `PLAN.md` with new partner entry
-6. Assign orders to partner via `POST /api/v1/farm/orders/{id}/assign-partner { "partner_id": "ptr_102" }`
+1. Assign next client ID (increment from 101)
+2. Add Vercel domain: `{id}-{name}.platform.fofus.in`
+3. Add GoDaddy CNAME: `{id}-{name}.platform` → `cname.vercel-dns.com`
+4. Set Vercel env vars: `VITE_LOGIN_USER`, `VITE_LOGIN_PASS`, `VITE_API_URL`
+5. Create partner record in backend
+6. Ship Pi 4B, run `pi/setup-pi.sh` with `FRANCHISE_ID` and `NODE_API_KEY`
+7. Pi joins `fofus-mesh` Tailscale network
+8. Assign orders via `POST /api/v1/farm/orders/{id}/assign-partner`
+
+---
+
+## Work Status
+
+### ✅ Built
+
+| Area | What was built | Files |
+|------|---------------|-------|
+| Auth | Login screen (sessionStorage, env-var creds) | `frontend/src/App.jsx` |
+| Kanban | 7-stage board, drag+drop, stage advance | `frontend/src/Dashboard.jsx` |
+| Shopify | Webhook receiver, readymade + custom product support | `backend/app/api/v1/endpoints/shopify.py` |
+| Messages | Per-order thread, unread badge | `backend/app/api/v1/endpoints/farm.py` |
+| Photos | Upload + base64 storage + thumbnail preview | `backend/app/api/v1/endpoints/farm.py` |
+| Print errors | Mark/unmark, red highlight, stats, analytics panel | `frontend/src/Dashboard.jsx` |
+| Analytics | Fleet utilization, material breakdown, error rate, filament | `frontend/src/Dashboard.jsx` |
+| Printers | Bambu LAN / Moonraker / OctoPrint live poll + CRUD | `backend/app/api/v1/endpoints/printers.py` |
+| Inventory | Filament spool tracking, low-stock alerts | `backend/app/api/v1/endpoints/farm.py` |
+| Shopify push | ⬆ button on DISPATCH cards — tracking + fulfillment | `frontend/src/Dashboard.jsx` |
+| Partner assign | 👤 button on every card — inline form | `frontend/src/Dashboard.jsx` |
+| Ubuntu hosting | systemd service, Tailscale Funnel setup | `backend/setup-ubuntu.sh`, `backend/update.sh` |
+| Customer portal | Next.js + Clerk auth, STL upload, products | `customer/` |
+
+### 🔲 To Do (Priority Order)
+
+| Priority | Area | What's needed |
+|----------|------|---------------|
+| BLOCKING | Shopify webhooks | Manual registration in Shopify Admin |
+| BLOCKING | PostgreSQL | Replace JSONL, SQLAlchemy models, Alembic |
+| HIGH | Role-based auth | JWT, admin vs partner login, data filtering |
+| HIGH | Admin message panel | Reply to partner messages, notification |
+| HIGH | Photo storage | Cloudflare R2 instead of base64 |
+| HIGH | Pi node setup | FDM Monster, FilaOps, Bambu bridge, heartbeat |
+| MED | n8n workflows | Shopify→AI→slicer→job, WhatsApp→order, dispatch→notify |
+| MED | Customer track page | `track.fofus.in/{order_id}` |
+| MED | Auto-fulfillment | DISPATCH → auto Shopify push |
+| MED | Order search | Search/filter Kanban |
+| MED | STL attachment | R2 upload linked to order card |
+| LOW | Territory routing | Pincode → franchise mapping, fallback logic |
+| LOW | Partner KYC | Application form, verifier workflow |
+| LOW | Revenue tracking | Commission per partner, P&L |
+| LOW | AI failure detection | Camera → CV model, auto-pause |
+| LOW | Mobile view | Responsive layout |
+| LOW | WhatsApp alerts | New order → partner WhatsApp |

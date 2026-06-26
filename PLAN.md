@@ -1,177 +1,229 @@
-# printdash — Feature Plan
+# FOFUS Manufacturing OS — Feature Plan
 
-> Live at: `{clientid}-{partner}.platform.fofus.in`
-> First deployment: `101-3ddevine.platform.fofus.in`
-> Stack: FastAPI backend · React/Vite frontend · Shopify webhook integration
-
----
-
-## How This Works (Overview)
-
-```
-Shopify Store (store.fofus.in)
-        │
-        │ orders/paid webhook
-        ▼
-  printdash Backend (Railway)
-        │
-        │ job queued as NEW
-        ▼
-  Kanban Board (printdash dashboard)
-        │
-        │ partner advances through stages
-        ▼
-  DISPATCH → Shopify fulfillment pushed back
-```
-
-Partners (e.g. 3D Devine) log in at their subdomain, manage their print queue, communicate with admin, and advance orders stage by stage.
+> **Vision:** Distributed 3D print farm OS connecting Shopify customers → AI pipeline → franchise partner nodes → dispatch.
+> **Stack:** FastAPI backend · React/Vite partner dashboard · Next.js customer portal · n8n automation · Bambu printers
+> **First franchise:** `101-3ddevine.platform.fofus.in` (3D Devine, Thrissur)
+> **Company:** GNI Labs LLP · GST 32ABBFG541K1ZM · Irinjalakuda, Thrissur, Kerala
 
 ---
 
-## Feature Checklist
+## System Overview
 
-### ✅ Done
+```
+Customer (WhatsApp / Shopify store.fofus.in)
+        │
+        ▼
+n8n Cloud (gni123.app.n8n.cloud)
+        │ Claude AI intent parse → STL → OrcaSlicer (Docker, Hetzner CX32)
+        │ G-code → Cloudflare R2
+        ▼
+FOFUS Backend (Ubuntu + Tailscale Funnel)  ←→  printdash (Vercel)
+        │                                        Partner Kanban dashboard
+        ▼
+Raspberry Pi node (per franchise)
+        ├── FDM Monster agent → Bambu MQTT → Printer (A1 / P1S / X1C)
+        ├── FilaOps daemon (filament weight tracking via MQTT)
+        └── Heartbeat agent (60s ping)
+        │
+        ▼
+Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notification
+```
 
-- [x] Login gate — partners must authenticate before seeing dashboard
-- [x] Shopify webhook → NEW order in Kanban (custom + readymade products)
-- [x] 7-stage Kanban pipeline: NEW → AI_PREP → PRINTING → POST_PROCESS → QC → PACK → DISPATCH
-- [x] Partners can only advance orders (no delete allowed)
-- [x] Message thread on each Kanban card (partner ↔ admin)
-- [x] Photo upload on each card (for logging print errors)
-- [x] Print error marking per order (⚠ badge + red highlight)
-- [x] Print error volume stat + analytics panel
-- [x] Shopify order details on card (order number, customer name, line items)
-- [x] Readymade product tracking (non-custom SKUs supported)
+---
+
+## ✅ Done — printdash Partner Dashboard
+
+- [x] Login gate — `101` / `101_3DDEVINE`, sessionStorage, env-var overrides
+- [x] Shopify webhook → NEW order in Kanban (`orders/paid`, `orders/create`)
+- [x] 7-stage Kanban: NEW → AI_PREP → PRINTING → POST_PROCESS → QC → PACK → DISPATCH
+- [x] Partners can only advance orders (no delete)
+- [x] Readymade product detection + READYMADE tag on card
+- [x] Message thread per card (partner ↔ admin)
+- [x] Photo upload per card (base64 stored in JSONL)
+- [x] Print error marking + red card highlight + error volume stats
+- [x] Analytics tab (utilization, material breakdown, error rate, filament stock)
 - [x] Printer farm monitoring (Bambu LAN / Moonraker / OctoPrint)
-- [x] Filament inventory + low-stock alerts
+- [x] Filament spool inventory + low-stock alerts
 - [x] Slicer tab (OrcaSlicer presets, STL/3MF upload)
-- [x] Analytics tab (utilization, material breakdown, slice quality, error rate)
-- [x] Partner assignment — 👤 button on each card, inline form to assign partner by name/ID
-- [x] Shopify return channel — ⬆ Shopify button on DISPATCH cards, form for tracking number/company/URL + customer email toggle
-- [x] Custom domain per partner (`clientid-partner.platform.fofus.in`)
+- [x] Partner assignment — 👤 button, inline form
+- [x] Shopify push — ⬆ button on DISPATCH cards (tracking + fulfillment)
+- [x] Custom domain `101-3ddevine.platform.fofus.in` on Vercel
+- [x] Ubuntu server backend setup (`setup-ubuntu.sh`, `printdash-backend.service`, `update.sh`)
+- [x] Tailscale Funnel for backend (replaces Railway)
+- [x] CORS: `*.ts.net`, `*.fofus.in`, `*.vercel.app`
 - [x] Dark/light theme
 
 ---
 
-### 🔲 Needed — High Priority
+## 🔴 BLOCKING — Must Fix Before Reliable Production
 
-#### 1. Role-Based Access (Admin vs Partner)
-- Admin login shows ALL orders across ALL partners
-- Partner login shows ONLY their assigned orders
-- Admin can respond to messages from the dashboard
-- Admin can mark messages as read
-- Separate credentials for admin (not shared with partners)
+### 1. Register Shopify Webhooks
+**Status: MANUAL STEP — nothing arrives without this**
 
-#### 2. Multi-Partner Support
-- Each new partner gets:
-  - A unique client ID (e.g. 102, 103...)
-  - A subdomain: `{id}-{name}.platform.fofus.in`
-  - A Vercel deployment (or same deployment, filtered by partner ID)
-  - Their own login credentials
-- Partner onboarding doc / checklist
+- Shopify Admin → Settings → Notifications → Webhooks
+- Add `orders/paid` → `https://<tailscale-hostname>/api/v1/shopify/webhook`
+- Add `orders/create` → `https://<tailscale-hostname>/api/v1/shopify/webhook`
+- Copy HMAC secret → `/etc/printdash/env` as `SHOPIFY_WEBHOOK_SECRET`
+- Restart backend: `sudo systemctl restart printdash-backend`
 
-#### 3. Persistent Database
-- Current store: in-memory + JSONL flat files (data lost on Railway restart)
-- Needed: PostgreSQL (Railway addon) via SQLAlchemy
-- Tables: orders, messages, photos (file refs), printers, inventory, partners
-- Migrations via Alembic
+### 2. PostgreSQL (Replace JSONL)
+**Status: Data is lost on restart / corruption risk on concurrent writes**
 
-#### 4. Photo Storage (Proper)
-- Current: base64 encoded into JSONL — bloats file, slow
-- Needed: upload to Cloudflare R2 / AWS S3 / Railway volume
-- Return a URL instead of raw base64
-- Max file size validation (5 MB)
+- Add PostgreSQL — options:
+  - Railway addon (simplest)
+  - Docker Postgres on Ubuntu server alongside the backend
+- Set `DATABASE_URL=postgresql+asyncpg://...` in `/etc/printdash/env`
+- SQLAlchemy async models: `orders`, `messages`, `photos`, `printers`, `inventory`, `partners`
+- Alembic migrations
+- Rewrite `farm_store.py` to use DB queries instead of in-memory list + JSONL
+- Archive code `repo/backend/app/core/database.py` has async SQLAlchemy setup ready to port
 
-#### 5. Admin Notification on New Message
-- When partner sends a message → admin gets notified
-- Options: email (SendGrid/Resend), WhatsApp (Twilio), Telegram bot
-- Mark messages as unread/read from admin side
+### 3. Role-Based Auth (Admin vs Partner)
+**Status: All partners see all orders; admin cannot reply to messages**
+
+- JWT login replacing hardcoded sessionStorage
+- Roles: `super_admin`, `franchise_admin`, `partner`
+- Backend: `POST /api/v1/auth/login` returns JWT with `role` + `partner_id` claims
+- Admin login → `business.fofus.in` — sees ALL orders, all partners, global stats
+- Partner login → `{id}-{name}.platform.fofus.in` — sees only their assigned orders
+- API filtering: `/api/v1/farm/status` filters by `partner_id` from JWT if role = partner
 
 ---
 
-### 🔲 Needed — Medium Priority
+## 🟡 HIGH — Core Product Completeness
 
-#### 6. Customer Tracking Page
-- Public URL: `track.fofus.in/{order_id}`
-- Shows order stage, estimated delivery, partner name
-- No login required
-- Auto-updated as partner advances Kanban stages
+### 4. Admin Message Panel
+- View all unread partner messages across all orders in one place
+- Reply from admin dashboard
+- Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
+- Unread/read state synced with backend
 
-#### 7. Shopify Auto-Fulfillment at DISPATCH
-- When partner moves order to DISPATCH stage → auto-push to Shopify
-- Pre-fill tracking company + number from the order card
-- Email customer automatically via Shopify
+### 5. Photo Storage — Cloudflare R2
+- Current: base64 in JSONL bloats file size (~100KB per photo)
+- Upload to Cloudflare R2 bucket → store URL in order record
+- Env: `R2_BUCKET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`
+- 5MB max file size validation
 
-#### 8. Order Search & Filter
+### 6. Raspberry Pi Franchise Node
+Each new franchise needs a Pi 4B running as a print farm edge node:
+- **FDM Monster agent** — polls job queue, sends G-code to Bambu via MQTT (port 8883)
+- **FilaOps daemon** — tracks spool weight, logs consumption to `/api/v1/filament/log`
+- **Bambu LAN bridge** — MQTT subscription to `device/[SN]/report`, publishes jobs
+- **Heartbeat agent** — 60s ping to `/api/v1/nodes/heartbeat` with `{franchise_id, printer_ids}`
+- **Tailscale VPN** — Pi joins `fofus-mesh` tailnet for HQ SSH access
+
+**Files needed:**
+```
+pi/setup-pi.sh           — one-shot Pi setup (Docker, Tailscale, service install)
+pi/docker-compose.yml    — FDM Monster + FilaOps + Bambu bridge
+pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRITORY_PINCODES
+```
+
+---
+
+## 🟠 MEDIUM — Growth & Automation
+
+### 7. n8n Workflow Integration
+- n8n at `gni123.app.n8n.cloud` is live but needs Shopify API credential set
+- Workflow 1: Shopify order → Claude AI parse → OrcaSlicer (Hetzner) → G-code to R2 → job to backend
+- Workflow 2: WhatsApp (AiSensy) intake → order created in backend → payment link
+- Workflow 3: Print complete webhook → Shiprocket label → WhatsApp customer notification
+- Workflow 4: Printer error → partner + admin WhatsApp alert
+
+### 8. Customer Order Tracking Page
+- Public URL: `track.fofus.in/{order_id}` — no login required
+- Shows: current stage, estimated delivery, partner name, shareable photos
+- Polls `/api/v1/orders/{id}/public` every 30s
+- Next.js on Vercel (add to `customer/` project)
+
+### 9. Shopify Auto-Fulfillment at DISPATCH
+- When partner advances to DISPATCH → auto-push tracking to Shopify + send customer email
+- Pre-fill from `tracking_url` and `parcel_code` on the order card
+
+### 10. Order Search & Filter
 - Search by customer name, order number, material
-- Filter Kanban by date range, partner, status
-- Useful when many orders in queue
+- Filter Kanban by partner, date range, error state
+- Needed once order volume exceeds 30–50/day
 
-#### 9. File Attachment on Orders
-- Partner or customer uploads STL/3MF file with order
-- Stored on R2/S3
-- Linked to the Kanban card for easy download during printing
+### 11. STL File Attachment
+- Upload STL/3MF to R2 with order
+- Download link on Kanban card for partner
+- Used by slicer pipeline
 
-#### 10. Print Error Reprint Flow
-- When error is marked → auto-create a new order copy at AI_PREP stage
-- Track reprint count on original order
-- Include original print error photo in new order
-
----
-
-### 🔲 Needed — Low Priority / Future
-
-#### 11. Bulk Operations
-- Select multiple cards → advance all to next stage
-- Bulk assign to printer
-- Bulk export (CSV / PDF invoice)
-
-#### 12. Partner Performance Report
-- Orders completed per partner per week/month
-- Average time per stage
-- Error rate per partner
-- Exportable PDF
-
-#### 13. Maintenance Tracker
-- Log maintenance events per printer
-- Reset `hours_since_maintenance` counter
-- Alert when maintenance overdue (> 200h)
-
-#### 14. Mobile-Optimised View
-- Current UI works on desktop only
-- Partners often check on phone at the printer
-- Responsive card layout for small screens
-
-#### 15. WhatsApp / Telegram Order Alerts
-- New Shopify order → WhatsApp message to partner
-- Message includes: order number, customer name, material, quantity
-- Integration via Twilio or Telegram Bot API
+### 12. Print Error Reprint Flow
+- Mark error → auto-clone order at AI_PREP stage
+- Track reprint count + carry error photo forward
 
 ---
 
-## Domain Convention
+## 🟢 LOW / FUTURE
 
-```
-Format:  {client_id}-{partner_slug}.platform.fofus.in
-Example: 101-3ddevine.platform.fofus.in
+### 13. Territory Routing (Multi-franchise Scale)
+- Pincode → franchise assignment table in PostgreSQL
+- Route job to nearest ONLINE node (checked via heartbeat)
+- Fallback: adjacent territory → HQ queue
+- Routing rules: INSTITUTIONAL always HQ, multi-unit split across nodes
 
-Client IDs start at 101 and increment.
-Partner slug: lowercase, no spaces, no underscores (use dash).
-```
+### 14. Partner KYC Onboarding
+- Application form: GST, Aadhaar, PAN, bank account, printer count
+- Field Verifier role reviews docs
+- Super Admin approves → creates franchise account + Tailscale auth key
 
-## Login Convention
+### 15. Revenue & Commission Tracking
+- Per-partner: orders completed, revenue, commission earned (% of order total)
+- Weekly PDF report
+- Admin global P&L view
 
-```
-Username: {client_id}          e.g.  101
-Password: {client_id}_{PARTNER_UPPER}   e.g.  101_3DDEVINE
-```
+### 16. AI Print Failure Detection
+- Bambu X1 camera feed → CV model detects spaghetti/layer shifts
+- Auto-pause + notify partner
+- `repo/backend/app/ai/failure_detector.py` in archive — needs camera integration
+
+### 17. Bulk Operations
+- Select multiple cards → advance all / assign all / export CSV
+
+### 18. WhatsApp Order Alerts (AiSensy)
+- New order → WhatsApp to assigned partner
+- Message: order #, customer, material, quantity
+
+### 19. Maintenance Tracker
+- Log printer service events, alert at >200h since last maintenance
+- Reset counter per printer
+
+### 20. Mobile View
+- Responsive layout for partner checking from phone at printer
 
 ---
 
-## Communication Note
+## Domain & Login Convention
 
-Every feature built or planned should be documented here and in `ARCHITECTURE.md`.
-When handing off to a developer:
-- Mark item as `[x]` when done
-- Add the file paths changed under each completed item
-- Add any API endpoint created under the relevant section
+```
+Partner dashboard: {client_id}-{partner_slug}.platform.fofus.in
+Admin panel:       business.fofus.in
+Customer portal:   fofus.in / customer.fofus.in
+Customer tracking: track.fofus.in/{order_id}
+
+Login:
+  Username: {client_id}           e.g. 101
+  Password: {client_id}_{PARTNER} e.g. 101_3DDEVINE
+```
+
+## Printer Fleet
+
+| Model | Price | Best For |
+|-------|-------|----------|
+| Bambu A1 | ₹31,999 | Religious idols, gifts, small SKUs |
+| Bambu P1S | ₹52,499 | Heritage models, architectural prints |
+| Bambu X1 Carbon | ₹1,28,999 | Dental, institutional, Theyyam costumes |
+
+Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolor (AMS), 1× PETG, 1× PLA Wood Fill
+
+## Tech Debt
+
+| Issue | Impact | Fix |
+|-------|--------|-----|
+| base64 photos in JSONL | File bloat, slow | Cloudflare R2 |
+| In-memory + JSONL store | Data loss on restart | PostgreSQL |
+| Hardcoded session auth | No real RBAC | JWT + role claims |
+| Shopify webhooks not registered | No orders arrive | Manual registration |
+| `orders.jsonl` full-rewrite on each update | Race conditions at scale | DB transactions |

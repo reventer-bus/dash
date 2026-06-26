@@ -14,12 +14,16 @@ _ORDERS_PATH   = _DIR / "orders.jsonl"
 _FEEDBACK_PATH = _DIR / "feedback.jsonl"
 _SPOOLS_PATH   = _DIR / "spools.jsonl"
 _PRINTERS_PATH = _DIR / "printers.jsonl"
+_COMMENTS_PATH = _DIR / "comments.jsonl"
+_ATTACHMENTS_DIR = _DIR / "attachments"
+_ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
 
 _orders: list[dict] = []
 _feedback: list[dict] = []
 _printers: list[dict] = []
 _inventory: list[dict] = []
 _printer_connections: dict[str, dict] = {}
+_comments: list[dict] = []  # per-order comment thread
 
 
 # ── Persistence helpers ───────────────────────────────────────────────────────
@@ -58,10 +62,11 @@ def _rewrite_jsonl(path: Path, records: list[dict]):
 # ── Startup ───────────────────────────────────────────────────────────────────
 
 def startup_load():
-    global _orders, _feedback, _inventory, _printers, _printer_connections
+    global _orders, _feedback, _inventory, _printers, _printer_connections, _comments
     _orders    = _load_jsonl(_ORDERS_PATH)
     _feedback  = _load_jsonl(_FEEDBACK_PATH)
     _inventory = _load_jsonl(_SPOOLS_PATH)
+    _comments  = _load_jsonl(_COMMENTS_PATH)
     saved = _load_jsonl(_PRINTERS_PATH)
     for p in saved:
         conn = {k: p.pop(k, "") for k in ("connection_type", "host", "serial", "access_code", "api_key")}
@@ -97,7 +102,6 @@ def get_status() -> dict:
             "printing":  printing,
             "flagged":   flagged,
             "completed": len([o for o in _orders if o.get("status") in ("DISPATCH", "LOGGED")]),
-            "print_errors": sum(1 for o in _orders if o.get("print_error")),
         },
     }
 
@@ -163,6 +167,59 @@ def get_inventory() -> list[dict]:
     return _inventory
 
 
+def low_stock_alerts() -> dict:
+    """Return spools below their reorder / critical thresholds.
+
+    Output shape:
+      {
+        "critical": [{spool, remaining_g, threshold_g, fill_pct}],
+        "low":      [{...}],
+        "ok":       [{...}],
+        "summary":  {"critical": n, "low": n, "ok": n, "total": n}
+      }
+    A spool is CRITICAL if remaining_g <= critical_threshold_g (default 50g),
+    LOW if remaining_g <= reorder_threshold_g (default 200g), otherwise OK.
+    """
+    critical, low, ok = [], [], []
+    for s in _inventory:
+        rem = float(s.get("remaining_g") or 0)
+        crit = float(s.get("critical_threshold_g") or 50)
+        reorder = float(s.get("reorder_threshold_g") or 200)
+        total = float(s.get("total_g") or 1)
+        fill_pct = round((rem / total) * 100, 1) if total > 0 else 0.0
+        entry = {
+            "id": s.get("id"),
+            "material": s.get("material"),
+            "brand": s.get("brand"),
+            "color_name": s.get("color_name"),
+            "hex_color": s.get("hex_color"),
+            "remaining_g": rem,
+            "threshold_g": crit if rem <= crit else reorder,
+            "fill_pct": fill_pct,
+            "assigned_printer": s.get("assigned_printer"),
+        }
+        if rem <= crit:
+            critical.append(entry)
+        elif rem <= reorder:
+            low.append(entry)
+        else:
+            ok.append(entry)
+    # Sort: critical by remaining ascending (most-empty first), low same
+    critical.sort(key=lambda x: x["remaining_g"])
+    low.sort(key=lambda x: x["remaining_g"])
+    return {
+        "critical": critical,
+        "low": low,
+        "ok": ok,
+        "summary": {
+            "critical": len(critical),
+            "low": len(low),
+            "ok": len(ok),
+            "total": len(_inventory),
+        },
+    }
+
+
 def add_spool(spool: dict) -> dict:
     spool.setdefault("id", f"spool-{int(datetime.now().timestamp() * 1000)}")
     spool.setdefault("remaining_g", spool.get("total_g", 1000))
@@ -224,26 +281,6 @@ def assign_job(job_id: str, printer_id: str) -> dict | None:
 
 # ── Shopify orders ────────────────────────────────────────────────────────────
 
-def add_order_message(order_id: str, msg: dict) -> dict | None:
-    for o in _orders:
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            o.setdefault("messages", []).append(msg)
-            o["updated_at"] = datetime.now(timezone.utc).isoformat()
-            _rewrite_jsonl(_ORDERS_PATH, _orders)
-            return o
-    return None
-
-
-def add_order_photo(order_id: str, photo: dict) -> dict | None:
-    for o in _orders:
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            o.setdefault("photos", []).append(photo)
-            o["updated_at"] = datetime.now(timezone.utc).isoformat()
-            _rewrite_jsonl(_ORDERS_PATH, _orders)
-            return o
-    return None
-
-
 def add_shopify_order(job: dict) -> dict:
     """Accept a Shopify order webhook and push it into the farm queue."""
     job.setdefault("status", "NEW")
@@ -254,9 +291,6 @@ def add_shopify_order(job: dict) -> dict:
     job.setdefault("parcel_code", "")
     job.setdefault("tracking_url", "")
     job.setdefault("history", [])
-    job.setdefault("messages", [])
-    job.setdefault("photos", [])
-    job.setdefault("print_error", False)
     # Avoid duplicates — Shopify may resend webhooks
     existing_ids = {o.get("id") for o in _orders}
     if job.get("id") in existing_ids:
@@ -292,9 +326,33 @@ def assign_partner(order_id: str, partner_id: str) -> dict | None:
     for o in _orders:
         if o.get("id") == order_id or o.get("spec_id") == order_id:
             o["assigned_partner"] = partner_id
+            o["assigned_at"] = datetime.now(timezone.utc).isoformat()
             o.setdefault("history", []).append({
                 "event": "assigned_partner",
                 "partner_id": partner_id,
+                "at": o["assigned_at"],
+            })
+            _rewrite_jsonl(_ORDERS_PATH, _orders)
+            return o
+    return None
+
+
+def unassign_partner(order_id: str, reason: str = "unassigned by admin") -> dict | None:
+    """Clear the partner assignment on an order. Returns updated order or None.
+
+    Records the unassignment in history with the given reason so the
+    audit trail shows why an order was taken off a partner.
+    """
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            previous = o.get("assigned_partner")
+            o.pop("assigned_partner", None)
+            o.pop("assigned_partner_name", None)
+            # Keep assigned_at so analytics can still measure past assignments
+            o.setdefault("history", []).append({
+                "event": "unassigned_partner",
+                "previous_partner": previous,
+                "reason": reason,
                 "at": datetime.now(timezone.utc).isoformat(),
             })
             _rewrite_jsonl(_ORDERS_PATH, _orders)
@@ -324,3 +382,105 @@ def list_partners_with_stats() -> list[dict]:
 def orders_for_partner(partner_id: str) -> list[dict]:
     """Return all orders assigned to a partner (active + completed)."""
     return [o for o in _orders if o.get("assigned_partner") == partner_id]
+
+
+# ── Attachments + print history (Phase 2 production UI) ──────────────────────
+
+def add_attachment(order_id: str, attachment: dict) -> dict | None:
+    """Append an attachment to an order. Returns the attachment dict or None."""
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            o.setdefault("attachments", []).append(attachment)
+            o.setdefault("history", []).append({
+                "event": "attachment_added",
+                "name": attachment.get("name"),
+                "kind": attachment.get("kind"),
+                "uploaded_by": attachment.get("uploaded_by"),
+                "at": datetime.now(timezone.utc).isoformat(),
+            })
+            _rewrite_jsonl(_ORDERS_PATH, _orders)
+            return attachment
+    return None
+
+
+def list_attachments(order_id: str) -> list[dict]:
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            return list(o.get("attachments", []))
+    return []
+
+
+def record_print_attempt(order_id: str, attempt: dict) -> dict | None:
+    """Append a print attempt to the order's print_history[]."""
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            o.setdefault("print_history", []).append(attempt)
+            o.setdefault("history", []).append({
+                "event": "print_attempt",
+                "status": attempt.get("status"),
+                "by": attempt.get("started_by"),
+                "at": attempt.get("started_at"),
+            })
+            _rewrite_jsonl(_ORDERS_PATH, _orders)
+            return attempt
+    return None
+
+
+def latest_print_attempt(order_id: str) -> dict | None:
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            hist = o.get("print_history") or []
+            return hist[-1] if hist else None
+    return None
+
+
+# ── Comments / per-order chat thread ──────────────────────────────────────────
+
+def add_comment(order_id: str, comment: dict) -> dict:
+    """Append a comment to an order's thread. Returns the comment dict.
+
+    Comment shape:
+      {id, order_id, author_id, author_name, author_role, text,
+       attachment_id, created_at, read_by: [user_id, ...]}
+    """
+    comment.setdefault("id", f"cmt-{int(datetime.now().timestamp() * 1000)}")
+    comment["order_id"] = order_id
+    comment.setdefault("created_at", datetime.now(timezone.utc).isoformat())
+    comment.setdefault("read_by", [])
+    _comments.append(comment)
+    _append_jsonl(_COMMENTS_PATH, comment)
+    return comment
+
+
+def list_comments(order_id: str) -> list[dict]:
+    """Return all comments for an order, oldest first."""
+    return [c for c in _comments
+            if c.get("order_id") == order_id
+            or c.get("order_id") == _resolve_order_id(order_id)]
+
+
+def mark_comment_read(order_id: str, comment_id: str, user_id: str) -> dict | None:
+    """Mark a comment as read by the given user. Returns the comment or None."""
+    for c in _comments:
+        if c.get("id") == comment_id and c.get("order_id") == order_id:
+            if user_id not in (c.get("read_by") or []):
+                c.setdefault("read_by", []).append(user_id)
+                _rewrite_jsonl(_COMMENTS_PATH, _comments)
+            return c
+    return None
+
+
+def unread_comment_count(order_id: str, user_id: str) -> int:
+    """Count comments on an order not yet read by the given user."""
+    return sum(1 for c in _comments
+               if (c.get("order_id") == order_id
+                   or c.get("order_id") == _resolve_order_id(order_id))
+               and user_id not in (c.get("read_by") or []))
+
+
+def _resolve_order_id(order_id: str) -> str:
+    """Try to find the canonical order id (matches by id or spec_id)."""
+    for o in _orders:
+        if o.get("id") == order_id or o.get("spec_id") == order_id:
+            return o.get("id") or order_id
+    return order_id

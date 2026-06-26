@@ -6,7 +6,7 @@ Supports Bambu Lab LAN (MQTT), Moonraker (Klipper), OctoPrint, and manual.
 from fastapi import APIRouter
 from pydantic import BaseModel
 from typing import Optional
-from app.services import farm_store, printer_connect, printer_discovery, mdns_discovery, bambu_subscriber
+from app.services import farm_store, printer_connect
 
 router = APIRouter()
 

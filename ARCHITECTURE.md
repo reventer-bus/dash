@@ -69,8 +69,8 @@ dash/
 
 | Service | Platform | URL / Location | Status |
 |---------|----------|----------------|--------|
-| Partner dashboard (printdash) | Vercel | `101-3ddevine.platform.fofus.in` | ✅ Live |
-| Backend API | Ubuntu server + Tailscale Funnel | `https://<hostname>.<tailnet>.ts.net` | ✅ Live |
+| Partner dashboard (printdash) | Vercel | `https://printdash-by3crk255-reventers-projects.vercel.app` (alias: `busienss.fofus.in`) | ✅ Live (2026-06-26) |
+| Backend API | Ubuntu server + Tailscale Funnel | `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net` (port 4322) | ✅ Live (2026-06-26) |
 | Shopify store | Shopify | `store.fofus.in` | ✅ Live |
 | n8n workflows | n8n Cloud | `gni123.app.n8n.cloud` | ✅ Live (Shopify cred pending) |
 | Slicer (OrcaSlicer CLI) | Hetzner CX32 VPS | Docker container | ✅ Live |
@@ -84,6 +84,23 @@ dash/
 
 ### Backend Hosting (Ubuntu + Tailscale Funnel)
 
+**Current live setup (2026-06-26):**
+```
+# Backend runs on port 4322, data dir ~/dash/data
+cd ~/dash/backend
+MAKER_AI_DIR=~/dash/data ~/dash/.venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 4322
+
+# Tailscale Funnel exposes port 4322 to internet
+tailscale funnel --bg 4322
+# → https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net
+
+# Vercel env vars (printdash project):
+#   VITE_API_URL       = https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net
+#   VITE_LOGIN_USER    = 101
+#   VITE_LOGIN_PASS    = 101_3DDEVINE
+```
+
+**Production setup (Ubuntu server with systemd):**
 ```bash
 # First-time setup (run as root on Ubuntu 22.04/24.04):
 sudo bash backend/setup-ubuntu.sh
@@ -103,7 +120,7 @@ sudo bash /opt/printdash-backend/backend/update.sh
 journalctl -u printdash-backend -f
 ```
 
-Data persists to `/var/lib/printdash/spec/` via `MAKER_AI_DIR` env var.
+Data persists to `~/dash/data/spec/` (dev) or `/var/lib/printdash/spec/` (prod) via `MAKER_AI_DIR` env var.
 
 ---
 

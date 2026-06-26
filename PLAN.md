@@ -49,7 +49,8 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 - [x] Shopify push — ⬆ button on DISPATCH cards (tracking + fulfillment)
 - [x] Custom domain `101-3ddevine.platform.fofus.in` on Vercel
 - [x] Ubuntu server backend setup (`setup-ubuntu.sh`, `printdash-backend.service`, `update.sh`)
-- [x] Tailscale Funnel for backend (replaces Railway)
+- [x] Tailscale Funnel for backend — live at `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net` (port 4322)
+- [x] Vercel deployment — `printdash` project, frontend deployed from `frontend/` dir with VITE_API_URL env var
 - [x] CORS: `*.ts.net`, `*.fofus.in`, `*.vercel.app`
 - [x] Dark/light theme
 

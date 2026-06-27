@@ -19,6 +19,12 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "development"
 
+    # Shopify integration
+    SHOPIFY_DOMAIN: str = Field(default="store.fofus.in")
+    SHOPIFY_ADMIN_TOKEN: str = Field(default="")
+    SHOPIFY_WEBHOOK_SECRET: str = Field(default="")
+    SHOPIFY_API_VERSION: str = Field(default="2024-04")
+
     class Config:
         env_file = ".env"
 

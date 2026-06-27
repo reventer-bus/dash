@@ -2,8 +2,12 @@ import type { Metadata } from 'next'
 import UploadStepper from '@/components/upload/UploadStepper'
 
 export const metadata: Metadata = {
-  title: 'Upload Your Design — FOFUS',
-  description: 'Upload your 3D model or sketch and get an instant INR quote for printing.',
+  title: 'Upload Your Design — FOFUS Instant Quote',
+  description: 'Upload your STL, OBJ, 3MF, or sketch and get an instant INR quote for 3D printing. Choose material, infill, and delivery.',
+  openGraph: {
+    title: 'Upload Your Design — FOFUS Instant Quote',
+    description: 'Get a real-time 3D print quote for your model in PLA, PETG, ABS, TPU, or PLA-CF.',
+  },
 }
 
 export default function UploadPage() {

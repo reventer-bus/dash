@@ -14,11 +14,14 @@ import httpx
 from fastapi import APIRouter, BackgroundTasks, Header, HTTPException, Request
 from pydantic import BaseModel
 
+from app.core.config import settings
+
 router = APIRouter()
 
-SHOPIFY_DOMAIN  = os.environ.get("SHOPIFY_DOMAIN", "store.fofus.in")
-SHOPIFY_TOKEN   = os.environ.get("SHOPIFY_ADMIN_TOKEN", "")   # Admin API token (server-only)
-SHOPIFY_SECRET  = os.environ.get("SHOPIFY_WEBHOOK_SECRET", "") # Webhook HMAC secret
+SHOPIFY_DOMAIN  = settings.SHOPIFY_DOMAIN
+SHOPIFY_TOKEN   = settings.SHOPIFY_ADMIN_TOKEN
+SHOPIFY_SECRET  = settings.SHOPIFY_WEBHOOK_SECRET
+SHOPIFY_API_VER = settings.SHOPIFY_API_VERSION
 
 # Variant GIDs created for the "Custom 3D Print" product
 MATERIAL_VARIANT: dict[str, int] = {
@@ -84,7 +87,7 @@ async def create_checkout(req: CheckoutRequest):
         }
     }
 
-    url = f"https://{SHOPIFY_DOMAIN}/admin/api/2024-04/draft_orders.json"
+    url = f"https://{SHOPIFY_DOMAIN}/admin/api/{SHOPIFY_API_VER}/draft_orders.json"
     async with httpx.AsyncClient() as client:
         resp = await client.post(
             url,

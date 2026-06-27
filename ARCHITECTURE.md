@@ -34,7 +34,11 @@ dash/
 │   │   │   ├── farm_store.py          ← In-memory store + JSONL persistence (replace with PostgreSQL)
 │   │   │   ├── printer_connect.py     ← Bambu/Moonraker/OctoPrint polling
 │   │   │   ├── orca_slicer.py         ← Slicer process wrapper
-│   │   │   └── quote_engine.py        ← Price calculation logic
+│   │   │   ├── quote_engine.py        ← Price calculation logic
+│   │   │   └── shopify_client.py      ← [PLANNED] shared Shopify Admin API helpers
+│   │   ├── core/
+│   │   │   ├── config.py              ← Pydantic settings (Shopify, DB, MinIO, etc.)
+│   │   │   └── database.py            ← Async SQLAlchemy base (future DB)
 │   │   └── models/
 │   │       ├── order.py               ← OrderStatus enum
 │   │       └── printer.py             ← PrinterStatus enum
@@ -46,10 +50,14 @@ dash/
 ├── customer/          ← Next.js customer storefront (Clerk auth)
 │   └── app/
 │       ├── page.tsx            ← Home + product catalog
+│       ├── layout.tsx         ← Root metadata, sitemap/robots routes
 │       ├── upload/page.tsx     ← STL upload → quote → Shopify checkout
 │       ├── account/            ← Order history, quotes
 │       ├── franchise/page.tsx  ← Franchise application page
-│       └── products/page.tsx   ← Readymade product catalog
+│       ├── products/page.tsx   ← Readymade product catalog
+│       ├── api/products/route.ts ← Shopify GraphQL product feed
+│       ├── sitemap.xml/route.ts  ← SEO sitemap
+│       └── robots.txt/route.ts   ← SEO robots.txt
 │
 ├── pipeline/          ← n8n workflow specs (JSON)
 │   └── farm_intake_workflow.json
@@ -76,7 +84,7 @@ dash/
 | Slicer (OrcaSlicer CLI) | Hetzner CX32 VPS | Docker container | ✅ Live |
 | File storage | Cloudflare R2 | `fofus-gcode` bucket | ✅ Live |
 | WhatsApp automation | AiSensy | `aisensy.com` | ✅ Live |
-| Customer portal | Vercel | `fofus.in` / `customer.fofus.in` | 🔲 Partial |
+|| Customer portal | Vercel | `fofus.in` / `customer.fofus.in` | 🟡 Partial (Shopify catalog + SEO sitemap/robots) |
 | Admin panel | Vercel | `business.fofus.in` | 🔲 Not built |
 | Customer tracking | Vercel | `track.fofus.in` | 🔲 Not built |
 | Database | PostgreSQL | Railway or Ubuntu Docker | ⚠️ Needed |
@@ -189,6 +197,26 @@ DISPATCH LAYER
 9. Backend calls Shopify Admin API to mark fulfilled + notify customer
 ```
 
+## Data Flow — Customer Portal → Shopify Checkout
+
+```
+1. Customer uploads STL on fofus.in/upload
+2. Backend / n8n slice pipeline returns material, weight, print time, quote
+3. Customer clicks "Pay now" → POST /api/v1/shopify/checkout
+4. Backend creates Shopify draft order with quoted price
+5. Customer redirected to Shopify invoice URL to complete payment
+6. Shopify orders/paid webhook → backend creates farm job
+```
+
+## Data Flow — Shopify Product Catalog
+
+```
+1. Customer portal /products fetches via GET /api/products (Next.js route)
+2. Server route queries Shopify GraphQL Admin API for active products
+3. Response cached 5 min via Next.js fetch revalidate
+4. Grid links to https://store.fofus.in/products/{handle}
+```
+
 ## Data Flow — Partner Communication
 
 ```
@@ -237,7 +265,17 @@ Partner uploads photo → POST /api/v1/farm/orders/{id}/photos (multipart)
 | Method | Path | Description |
 |--------|------|-------------|
 | POST | `/api/v1/shopify/checkout` | Create Shopify draft order + return invoice URL |
-| POST | `/api/v1/shopify/webhook` | Receive orders/paid or orders/create webhook |
+| POST | `/api/v1/shopify/webhook` | Receive `orders/paid` or `orders/create` webhook (HMAC verified) |
+
+### Customer Portal (Next.js)
+| Method | Path | Description |
+|--------|------|-------------|
+| GET | `/` | Home / landing page |
+| GET | `/upload` | STL upload + instant quote |
+| GET | `/products` | Shopify product catalog |
+| GET | `/franchise` | Franchise application landing |
+| GET | `/sitemap.xml` | SEO sitemap |
+| GET | `/robots.txt` | SEO robots directives |
 
 ### Printers
 | Method | Path | Description |
@@ -358,21 +396,25 @@ Roles:
 
 ## Environment Variables
 
-### Backend (`/etc/printdash/env`)
+### Backend (`/etc/printdash/env` or `/home/reventer/dash/backend/.env`)
 ```
 SHOPIFY_DOMAIN          store.fofus.in
 SHOPIFY_ADMIN_TOKEN     shpat_xxx...
 SHOPIFY_WEBHOOK_SECRET  whsec_xxx...
+SHOPIFY_API_VERSION     2024-04
 MAKER_AI_DIR            /var/lib/printdash
 DATABASE_URL            postgresql+asyncpg://...  (when DB is added)
-R2_BUCKET               fofus-gcode
-R2_ACCOUNT_ID           xxx
-R2_ACCESS_KEY           xxx
-R2_SECRET_KEY           xxx
 SECRET_KEY              (JWT signing key, openssl rand -hex 32)
 ```
 
-### Frontend (Vercel)
+### Customer Portal (Next.js / Vercel)
+```
+NEXT_PUBLIC_SITE_URL    https://fofus.in
+SHOPIFY_DOMAIN          store.fofus.in
+SHOPIFY_ADMIN_TOKEN     shpat_xxx...
+```
+
+### Partner Dashboard (Vite / Vercel)
 ```
 VITE_API_URL            https://<hostname>.<tailnet>.ts.net
 VITE_LOGIN_USER         101

@@ -1,7 +1,14 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { ArrowLeft } from 'lucide-react'
+
+export const metadata: Metadata = {
+  title: 'My Orders — FOFUS',
+  description: 'Track the status of your FOFUS 3D print orders.',
+  robots: { index: false, follow: false },
+}
 
 export default async function OrdersPage() {
   const { userId } = await auth()

@@ -2,6 +2,13 @@ import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
 import { Package, FileText, ArrowRight } from 'lucide-react'
+import type { Metadata } from 'next'
+
+export const metadata: Metadata = {
+  title: 'My Account — FOFUS',
+  description: 'View your FOFUS orders, saved quotes, and upload history.',
+  robots: { index: false, follow: false },
+}
 
 export default async function AccountPage() {
   const { userId } = await auth()

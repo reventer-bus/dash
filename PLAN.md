@@ -35,6 +35,9 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 
 - [x] Login gate — `101` / `101_3DDEVINE`, sessionStorage, env-var overrides
 - [x] Shopify webhook → NEW order in Kanban (`orders/paid`, `orders/create`)
+- [x] Shopify draft-order checkout API (`POST /api/v1/shopify/checkout`)
+- [x] Shopify product catalog pulled into customer portal (`/api/products`)
+- [x] Shopify env vars typed in `config.py` (`SHOPIFY_DOMAIN`, `SHOPIFY_ADMIN_TOKEN`, `SHOPIFY_WEBHOOK_SECRET`, `SHOPIFY_API_VERSION`)
 - [x] 7-stage Kanban: NEW → AI_PREP → PRINTING → POST_PROCESS → QC → PACK → DISPATCH
 - [x] Partners can only advance orders (no delete)
 - [x] Readymade product detection + READYMADE tag on card
@@ -62,10 +65,12 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 **Status: MANUAL STEP — nothing arrives without this**
 
 - Shopify Admin → Settings → Notifications → Webhooks
-- Add `orders/paid` → `https://<tailscale-hostname>/api/v1/shopify/webhook`
-- Add `orders/create` → `https://<tailscale-hostname>/api/v1/shopify/webhook`
-- Copy HMAC secret → `/etc/printdash/env` as `SHOPIFY_WEBHOOK_SECRET`
-- Restart backend: `sudo systemctl restart printdash-backend`
+- Add `orders/paid` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/api/v1/shopify/webhook`
+- Add `orders/create` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/api/v1/shopify/webhook`
+- Copy HMAC secret → `SHOPIFY_WEBHOOK_SECRET` in `/etc/printdash/env` (or `.env` for dev)
+- Restart backend: `sudo systemctl restart printdash-backend` (or dev uvicorn)
+
+Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 
 ### 2. PostgreSQL (Replace JSONL)
 **Status: Data is lost on restart / corruption risk on concurrent writes**
@@ -137,21 +142,29 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - Polls `/api/v1/orders/{id}/public` every 30s
 - Next.js on Vercel (add to `customer/` project)
 
-### 9. Shopify Auto-Fulfillment at DISPATCH
+### 9. SEO Foundation
+- ✅ Sitemap at `/sitemap.xml` (Next.js route)
+- ✅ Robots.txt at `/robots.txt` (Next.js route)
+- ✅ Page-level metadata on home, products, upload, franchise, account pages
+- [ ] Structured data JSON-LD for products / LocalBusiness
+- [ ] Image alt-text audit on product grid
+- [ ] Core Web Vitals / lazy image loading audit
+
+### 10. Shopify Auto-Fulfillment at DISPATCH
 - When partner advances to DISPATCH → auto-push tracking to Shopify + send customer email
 - Pre-fill from `tracking_url` and `parcel_code` on the order card
 
-### 10. Order Search & Filter
+### 11. Order Search & Filter
 - Search by customer name, order number, material
 - Filter Kanban by partner, date range, error state
 - Needed once order volume exceeds 30–50/day
 
-### 11. STL File Attachment
+### 12. STL File Attachment
 - Upload STL/3MF to R2 with order
 - Download link on Kanban card for partner
 - Used by slicer pipeline
 
-### 12. Print Error Reprint Flow
+### 13. Print Error Reprint Flow
 - Mark error → auto-clone order at AI_PREP stage
 - Track reprint count + carry error photo forward
 

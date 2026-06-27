@@ -4,8 +4,12 @@ import Link from 'next/link'
 import { ArrowRight, ExternalLink } from 'lucide-react'
 
 export const metadata: Metadata = {
-  title: 'Products — FOFUS',
-  description: 'Browse 3D-printed products from FOFUS — gifts, home décor, keychains, and more. Made in India.',
+  title: 'Browse 3D-Printed Products — FOFUS',
+  description: 'Shop 3D-printed gifts, home décor, fashion accessories, and custom prints from FOFUS — made in India by local franchise partners.',
+  openGraph: {
+    title: 'Browse 3D-Printed Products — FOFUS',
+    description: 'Discover ready-to-ship and customisable products from India\'s franchise-powered 3D print network.',
+  },
 }
 
 interface ShopifyProduct {

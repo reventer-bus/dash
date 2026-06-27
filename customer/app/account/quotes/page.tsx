@@ -1,7 +1,14 @@
 import { auth } from '@clerk/nextjs/server'
 import { redirect } from 'next/navigation'
 import Link from 'next/link'
+import type { Metadata } from 'next'
 import { ArrowLeft } from 'lucide-react'
+
+export const metadata: Metadata = {
+  title: 'Saved Quotes — FOFUS',
+  description: 'Revisit your saved FOFUS 3D print quotes.',
+  robots: { index: false, follow: false },
+}
 
 export default async function QuotesPage() {
   const { userId } = await auth()

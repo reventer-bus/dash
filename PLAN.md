@@ -73,28 +73,35 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 
 ### 2. PostgreSQL (Replace JSONL)
-**Status: Data is lost on restart / corruption risk on concurrent writes**
+**Status: Models + migrations built (Jul 05). Self-hosted on same Ubuntu box as backend — Railway rejected (see below). `farm_store.py` NOT yet rewired — still the live data path for orders/printers/messages endpoints. That rewire is the next task.**
 
-- Add PostgreSQL — options:
-  - Railway addon (simplest)
-  - Docker Postgres on Ubuntu server alongside the backend
-- Set `DATABASE_URL=postgresql+asyncpg://...` in `/etc/printdash/env`
-- SQLAlchemy async models: `orders`, `messages`, `photos`, `printers`, `inventory`, `partners`
-- Alembic migrations
-- Rewrite `farm_store.py` to use DB queries instead of in-memory list + JSONL
-- Archive code `repo/backend/app/core/database.py` has async SQLAlchemy setup ready to port
+- [x] `Partner`, `User` models added (were missing/incomplete — `models/__init__.py` was empty, no `Partner` model existed despite FK references)
+- [x] Alembic scaffolding (`alembic.ini`, `alembic/env.py`, `alembic/versions/0001_initial.py`) — hand-written, untested against a live DB, run `alembic upgrade head` and verify before trusting it
+- [x] `backend/02-postgres-setup.sh` — installs Postgres 16 **on the same Ubuntu server as the backend** (not Railway, not Docker), localhost-only bind, writes `DATABASE_URL` into `/etc/printdash/env`, daily `pg_dump`→R2 cron
+- [ ] Rewrite `farm_store.py` to use DB queries instead of in-memory list + JSONL — **not done, do this next**
 
 ### 3. Role-Based Auth (Admin vs Partner)
-**Status: All partners see all orders; admin cannot reply to messages**
+**Status: DB-backed JWT auth built (Jul 05), replaces in-memory dict. Roles expanded beyond original scope — see below.**
 
-- JWT login replacing hardcoded sessionStorage
-- Roles: `super_admin`, `franchise_admin`, `partner`
-- Backend: `POST /api/v1/auth/login` returns JWT with `role` + `partner_id` claims
-- Admin login → `business.fofus.in` — sees ALL orders, all partners, global stats
-- Partner login → `{id}-{name}.platform.fofus.in` — sees only their assigned orders
-- API filtering: `/api/v1/farm/status` filters by `partner_id` from JWT if role = partner
+- [x] `auth.py` rewired to query the real `users` table instead of an in-memory dict
+- [x] Roles expanded: `super_admin`, `franchise_admin`, `partner` (original 3) + `technician`, `artist`, `space_manager` (new — see item #21)
+- [x] `require_role()` dependency factory for endpoint-level role gating
+- [ ] Partner login → `{id}-{name}.platform.fofus.in` scoping still needs endpoint-level `partner_id` filtering added to `farm.py`/`orders.py` — models support it, endpoints don't enforce it yet
 
 ---
+
+### 21. NEW — Masked Customer↔Technician Chat Relay
+**Status: Models + regex masking layer built (Jul 05). NOT production-safe yet — read the gaps below before enabling.**
+
+- [x] `chat_threads`, `chat_messages`, `pii_block_audit` tables (migration 0001)
+- [x] `pipeline/pii_mask.py` — regex layer: Indian phone (digit + spelled-out), email, UPI handles, social handles
+- [ ] **LLM second pass — NOT built.** Regex misses paraphrased contact requests ("call me, number ending 4640") and non-Indian formats. Do not treat this as leak-proof without it.
+- [ ] **Image/voice note handling — NOT built.** A phone number written on paper and photographed, or read aloud in a voice note, passes straight through untouched. OCR + speech-to-text pre-processing required before the text mask ever runs.
+- [ ] n8n workflow wiring: AiSensy webhook → `pii_mask.py` logic (paste into Function node) → Google Chat space per job, and reverse path
+- [ ] Masking must run server-side in n8n (Hetzner) — explicitly NOT in the local Hermes/OpenClaw PC agent, which is a single point of failure and out of the trust boundary for anything customer-facing
+- [ ] Decide retention policy on `raw_text` — currently kept for abuse investigation, readable only by `super_admin` at the app layer (not yet enforced in code — add to `require_role` on whatever endpoint reads it)
+
+
 
 ## 🟡 HIGH — Core Product Completeness
 

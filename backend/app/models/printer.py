@@ -21,7 +21,7 @@ class Printer(Base):
     material_type = Column(String, default="PLA")
     ai_health_score = Column(Float, default=100.0)
     total_print_hours = Column(Float, default=0.0)
-    partner_id = Column(String, ForeignKey("partners.id"), nullable=False)
+    partner_id = Column(String, ForeignKey("partners.id"), nullable=False, index=True)
     camera_url = Column(String)
 
     partner = relationship("Partner", back_populates="printers")

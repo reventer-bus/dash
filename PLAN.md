@@ -76,7 +76,7 @@ Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 **Status: Models + migrations built (Jul 05). Self-hosted on same Ubuntu box as backend — Railway rejected (see below). `farm_store.py` NOT yet rewired — still the live data path for orders/printers/messages endpoints. That rewire is the next task.**
 
 - [x] `Partner`, `User` models added (were missing/incomplete — `models/__init__.py` was empty, no `Partner` model existed despite FK references)
-- [x] Alembic scaffolding (`alembic.ini`, `alembic/env.py`, `alembic/versions/0001_initial.py`) — hand-written, untested against a live DB, run `alembic upgrade head` and verify before trusting it
+- [x] Alembic scaffolding (`alembic.ini`, `alembic/env.py`, `alembic/versions/0001_initial.py`) — verified against live Postgres 16 (Jul 05): `upgrade head`, `alembic check` (clean after adding missing `index=True` to models), and `downgrade base` → re-upgrade all pass
 - [x] `backend/02-postgres-setup.sh` — installs Postgres 16 **on the same Ubuntu server as the backend** (not Railway, not Docker), localhost-only bind, writes `DATABASE_URL` into `/etc/printdash/env`, daily `pg_dump`→R2 cron
 - [ ] Rewrite `farm_store.py` to use DB queries instead of in-memory list + JSONL — **not done, do this next**
 

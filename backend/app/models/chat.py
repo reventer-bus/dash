@@ -28,7 +28,7 @@ class ChatMessage(Base):
     __tablename__ = "chat_messages"
 
     id = Column(String, primary_key=True)                # "msg_<timestamp>"
-    thread_id = Column(String, ForeignKey("chat_threads.id"), nullable=False)
+    thread_id = Column(String, ForeignKey("chat_threads.id"), nullable=False, index=True)
     direction = Column(String, nullable=False)            # 'customer_to_tech' | 'tech_to_customer'
     raw_text = Column(Text, nullable=True)                # restrict read access to super_admin only
     masked_text = Column(Text, nullable=False)

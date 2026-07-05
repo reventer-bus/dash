@@ -86,6 +86,8 @@ async def main():
             check("JSONL comment imported", cm["count"] == 1)
 
             # ── 2. Auth ──
+            r = await c.get("/api/v1/auth/bootstrap-needed")
+            check("bootstrap-needed true on empty users", r.json().get("needed") is True, r.text)
             r = await c.post("/api/v1/auth/register", json={
                 "name": "HQ Admin", "email": "admin@fofus.in",
                 "password": "adminpass123", "role": "super_admin"})
@@ -104,6 +106,31 @@ async def main():
             P = {"Authorization": f"Bearer {partner_tok}"}
             r = await c.get("/api/v1/auth/me", headers=P)
             check("login/me works (DB-backed)", r.json().get("partner_id") == "101", r.text)
+
+            r = await c.get("/api/v1/auth/bootstrap-needed")
+            check("bootstrap-needed false once users exist", r.json().get("needed") is False, r.text)
+
+            # ── 2b. Admin user management (/api/v1/admin/users) ──
+            r = await c.get("/api/v1/admin/users")
+            check("admin/users anonymous → 401", r.status_code == 401, str(r.status_code))
+            r = await c.get("/api/v1/admin/users", headers=P)
+            check("admin/users partner token → 403", r.status_code == 403, str(r.status_code))
+            r = await c.get("/api/v1/admin/users", headers=A)
+            check("admin/users list", r.status_code == 200 and len(r.json()["users"]) == 2, r.text)
+            r = await c.post("/api/v1/admin/users", headers=A, json={
+                "name": "Floor Tech", "email": "floor@3ddevine.in",
+                "password": "floorpass123", "role": "technician", "partner_id": "101"})
+            check("admin creates technician", r.status_code == 201, r.text)
+            r = await c.post("/api/v1/auth/login", json={
+                "email": "floor@3ddevine.in", "password": "floorpass123"})
+            check("created technician can log in", r.status_code == 200, r.text)
+            r = await c.delete("/api/v1/admin/users/floor@3ddevine.in", headers=A)
+            check("admin deactivates user", r.status_code == 200 and r.json().get("active") is False, r.text)
+            r = await c.post("/api/v1/auth/login", json={
+                "email": "floor@3ddevine.in", "password": "floorpass123"})
+            check("deactivated user login → 403", r.status_code == 403, r.text)
+            r = await c.delete("/api/v1/admin/users/admin@fofus.in", headers=A)
+            check("self-deactivation blocked", r.status_code == 400, r.text)
 
             # ── 3. Lifecycle ──
             r = await c.patch("/api/v1/farm/orders/shopify-111",

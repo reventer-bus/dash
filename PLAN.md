@@ -91,7 +91,9 @@ Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 - [x] `require_role()` dependency factory for endpoint-level role gating
 - [x] Endpoint-level `partner_id` scoping in `farm.py`: partner-scoped tokens only see/touch their own orders (`/status`, `/queue`, `/analytics`, PATCH, attachments, comments, print-attempts → 403 on foreign orders); assignment/cleanup endpoints are super_admin-only
 - [x] Registration hardened: anonymous signups are forced to role `partner` (only super_admin creates staff; first-ever account may bootstrap super_admin); registering with a new `partner_id` get-or-creates the Partner row
-- [ ] **Flip `AUTH_ENFORCE=true`** (env) once the deployed dashboard login is migrated to `POST /auth/login` + Bearer header on every request — until then anonymous calls behave exactly as before Phase 1 (unscoped), so the live Vercel frontend keeps working. This is the deliberate legacy-compat gap; closing it = frontend work, not backend.
+- [x] Frontend JWT login (Jul 05): login screen accepts email → `POST /auth/login`, stores `pd_token`, and a global fetch interceptor (`frontend/src/auth.js`) sends the Bearer header on every API call. First-run bootstrap: when the users table is empty the login screen offers super_admin creation (`GET /auth/bootstrap-needed`). Legacy client-ID gate (`101` / env creds) kept as fallback until all accounts are migrated.
+- [x] `/api/v1/admin/users` endpoints added (GET/POST/DELETE, always super_admin-JWT, no anonymous mode) — the Partners tab called these since before the backend existed; it 404'd until now. Delete = soft-deactivate (login blocked, history preserved); self-deactivation blocked.
+- [ ] **Flip `AUTH_ENFORCE=true`** (env) after deploying and creating real accounts for everyone — the legacy client-ID gate sends no JWT, so flipping the flag retires it. Until then anonymous calls stay unscoped exactly as before Phase 1.
 
 ---
 

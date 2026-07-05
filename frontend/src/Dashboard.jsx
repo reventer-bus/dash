@@ -1546,7 +1546,7 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   const [lastPoll, setLastPoll] = useState(null)
   const [error, setError] = useState(null)
   const [partnerList, setPartnerList] = useState([])
-  const [newPartner, setNewPartner] = useState({ name: '', email: '', password: '', role: 'partner' })
+  const [newPartner, setNewPartner] = useState({ name: '', email: '', password: '', role: 'partner', partner_id: '' })
   const [creating, setCreating] = useState(false)
   const [createError, setCreateError] = useState(null)
   // Partner work stats: GET /api/v1/farm/partners
@@ -1810,8 +1810,7 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
       const res = await fetch(`${apiUrlRef.current}/api/v1/admin/users`)
       if (!res.ok) return
       const body = await res.json()
-      const users = (body.users || []).filter(u => u.role === 'partner' || u.role === 'admin')
-      setPartnerList(users)
+      setPartnerList(body.users || [])
     } catch (_) {}
   }, [adminMode])
 
@@ -1819,16 +1818,8 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
     e.preventDefault()
     setCreating(true); setCreateError(null)
     try {
-      const body = { ...newPartner, role: newPartner.role }
-      // Admin role requires the registration secret
-      if (newPartner.role === 'admin') {
-        // The secret is not stored on the client (would leak via DevTools).
-        // Admin creation via this UI is intentionally disabled — admins
-        // are created from a trusted terminal via /api/v1/auth/register.
-        setCreateError('Admin creation via UI is disabled. Use /auth/register from the server terminal.')
-        setCreating(false)
-        return
-      }
+      // partner accounts need a partner_id for order scoping; staff roles don't
+      const body = { ...newPartner, partner_id: newPartner.partner_id.trim() || null }
       const res = await fetch(`${apiUrlRef.current}/api/v1/admin/users`, {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
@@ -1839,7 +1830,7 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
         setCreateError(respBody.detail || `HTTP ${res.status}`)
         return
       }
-      setNewPartner({ name: '', email: '', password: '', role: 'partner' })
+      setNewPartner({ name: '', email: '', password: '', role: 'partner', partner_id: '' })
       fetchPartners()
     } catch (err) {
       setCreateError(String(err))
@@ -2107,9 +2098,9 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
             <span style={{
               padding: '1px 5px', borderRadius: 3, fontWeight: 700, fontSize: 8,
               letterSpacing: '0.08em', textTransform: 'uppercase', flexShrink: 0,
-              background: authUser.role === 'admin' ? '#4a9eff20' : '#00cc6620',
-              color: authUser.role === 'admin' ? '#4a9eff' : '#00cc66',
-              border: `1px solid ${authUser.role === 'admin' ? '#4a9eff50' : '#00cc6650'}`,
+              background: (authUser.role === 'admin' || authUser.role === 'super_admin') ? '#4a9eff20' : '#00cc6620',
+              color: (authUser.role === 'admin' || authUser.role === 'super_admin') ? '#4a9eff' : '#00cc66',
+              border: `1px solid ${(authUser.role === 'admin' || authUser.role === 'super_admin') ? '#4a9eff50' : '#00cc6650'}`,
             }}>{authUser.role}</span>
             <span style={{
               color: T.text, overflow: 'hidden', textOverflow: 'ellipsis',
@@ -2268,7 +2259,7 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
                   }}>
                     <div style={{
                       width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
-                      background: u.role === 'admin' ? '#4a9eff' : '#00cc66',
+                      background: (u.role === 'admin' || u.role === 'super_admin') ? '#4a9eff' : '#00cc66',
                       color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
                       fontSize: 14, fontWeight: 700,
                     }}>{u.name?.[0]?.toUpperCase() || '?'}</div>
@@ -2283,7 +2274,7 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
                       }}>{u.email}</div>
                     </div>
                     <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
-                      <Tag color={u.role === 'admin' ? '#4a9eff' : '#00cc66'}>{u.role}</Tag>
+                      <Tag color={(u.role === 'admin' || u.role === 'super_admin') ? '#4a9eff' : '#00cc66'}>{u.role}</Tag>
                       <Tag color="#888">{u.provider}</Tag>
                     </div>
                     {u.email !== authUser?.email && (
@@ -2470,13 +2461,23 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
               minLength={8}
               style={inputStyle(T)}
             />
+            <input
+              value={newPartner.partner_id}
+              onChange={e => setNewPartner({...newPartner, partner_id: e.target.value})}
+              placeholder="Partner / client ID (e.g. 101) — required for partner roles"
+              style={inputStyle(T)}
+            />
             <select
               value={newPartner.role}
               onChange={e => setNewPartner({...newPartner, role: e.target.value})}
               style={inputStyle(T)}
             >
               <option value="partner">Partner</option>
-              <option value="admin">Admin (requires secret)</option>
+              <option value="technician">Technician</option>
+              <option value="artist">Artist</option>
+              <option value="space_manager">Space Manager</option>
+              <option value="franchise_admin">Franchise Admin</option>
+              <option value="super_admin">Super Admin (HQ)</option>
             </select>
             <button type="submit" disabled={creating} style={{
               background: '#00cc66', color: '#000', border: 'none',

@@ -186,6 +186,15 @@ def require_role(*allowed: UserRole):
     return _dep
 
 
+@router.get("/bootstrap-needed")
+async def bootstrap_needed(db: AsyncSession = Depends(get_db)):
+    """True while the users table is empty — the login screen uses this to
+    offer first-run super_admin creation (register honors any role for the
+    very first account)."""
+    first = (await db.execute(select(User.id).limit(1))).first()
+    return {"needed": first is None}
+
+
 @router.post("/register", response_model=TokenResponse, status_code=201)
 async def register(
     req: RegisterRequest,

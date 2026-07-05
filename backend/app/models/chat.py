@@ -21,7 +21,7 @@ class ChatThread(Base):
     customer_wa_id = Column(String, nullable=False)      # AiSensy/WhatsApp id — never shown to technician
     technician_id = Column(String, ForeignKey("users.id"), nullable=True)
     google_chat_space_id = Column(String, nullable=True) # technician-side space — never shown to customer
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class ChatMessage(Base):
@@ -34,7 +34,7 @@ class ChatMessage(Base):
     masked_text = Column(Text, nullable=False)
     contains_pii_flag = Column(Boolean, default=False)
     pii_types = Column(ARRAY(String), nullable=True)      # e.g. ['phone', 'email', 'upi']
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
 
 class PiiBlockAudit(Base):
@@ -44,4 +44,4 @@ class PiiBlockAudit(Base):
     message_id = Column(String, ForeignKey("chat_messages.id"), nullable=False)
     detection_method = Column(String, nullable=False)     # 'regex' | 'llm_pass' | 'ocr'
     pattern_matched = Column(String, nullable=True)
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)

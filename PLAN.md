@@ -73,20 +73,25 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 
 ### 2. PostgreSQL (Replace JSONL)
-**Status: Models + migrations built (Jul 05). Self-hosted on same Ubuntu box as backend — Railway rejected (see below). `farm_store.py` NOT yet rewired — still the live data path for orders/printers/messages endpoints. That rewire is the next task.**
+**Status: ✅ DONE (Phase 1, Jul 05). `farm_store.py` rewired onto Postgres — in-memory read cache + write-through DB on every mutation. JSONL is no longer the data path.**
 
 - [x] `Partner`, `User` models added (were missing/incomplete — `models/__init__.py` was empty, no `Partner` model existed despite FK references)
-- [x] Alembic scaffolding (`alembic.ini`, `alembic/env.py`, `alembic/versions/0001_initial.py`) — verified against live Postgres 16 (Jul 05): `upgrade head`, `alembic check` (clean after adding missing `index=True` to models), and `downgrade base` → re-upgrade all pass
+- [x] Alembic scaffolding — verified against live Postgres 16: `upgrade head`, `alembic check`, `downgrade base` → re-upgrade all pass
 - [x] `backend/02-postgres-setup.sh` — installs Postgres 16 **on the same Ubuntu server as the backend** (not Railway, not Docker), localhost-only bind, writes `DATABASE_URL` into `/etc/printdash/env`, daily `pg_dump`→R2 cron
-- [ ] Rewrite `farm_store.py` to use DB queries instead of in-memory list + JSONL — **not done, do this next**
+- [x] `farm_store.py` rewired to Postgres (migration `0002_farm_doc_store`): orders/printers stored as JSONB docs with indexed hot columns (status, assigned_partner, shopify_order_id); new `spools`/`farm_feedback`/`order_comments` tables; printer connection secrets in a separate column, never returned by read paths
+- [x] **One-time JSONL import**: on first startup against an empty DB, legacy `$MAKER_AI_DIR/spec/*.jsonl` files are imported automatically, so the live server's existing orders survive the cutover (JSONL files left on disk as fallback)
+- [x] End-to-end verified: `backend/scripts/smoke_phase1.py` (37 checks — import, auth, lifecycle, scoping, restart persistence) all green against Postgres 16
+- [x] Fixed while rewiring: naive `TIMESTAMP` columns rejected the app's tz-aware datetimes under asyncpg (registration 500'd); `Printer.jobs` relationship pointed at a `PrintJob` model that doesn't exist (broke SQLAlchemy mapper config on first ORM query = login); `app/services/analytics.py` / `shopify_pusher.py` / `file_resolver.py` were imported by farm.py but absent from the repo (those endpoints 500'd) — real implementations added
 
 ### 3. Role-Based Auth (Admin vs Partner)
-**Status: DB-backed JWT auth built (Jul 05), replaces in-memory dict. Roles expanded beyond original scope — see below.**
+**Status: ✅ Endpoint scoping DONE (Phase 1, Jul 05). One deliberate gap: anonymous requests still pass unscoped until the frontend sends JWTs — see AUTH_ENFORCE below.**
 
 - [x] `auth.py` rewired to query the real `users` table instead of an in-memory dict
 - [x] Roles expanded: `super_admin`, `franchise_admin`, `partner` (original 3) + `technician`, `artist`, `space_manager` (new — see item #21)
 - [x] `require_role()` dependency factory for endpoint-level role gating
-- [ ] Partner login → `{id}-{name}.platform.fofus.in` scoping still needs endpoint-level `partner_id` filtering added to `farm.py`/`orders.py` — models support it, endpoints don't enforce it yet
+- [x] Endpoint-level `partner_id` scoping in `farm.py`: partner-scoped tokens only see/touch their own orders (`/status`, `/queue`, `/analytics`, PATCH, attachments, comments, print-attempts → 403 on foreign orders); assignment/cleanup endpoints are super_admin-only
+- [x] Registration hardened: anonymous signups are forced to role `partner` (only super_admin creates staff; first-ever account may bootstrap super_admin); registering with a new `partner_id` get-or-creates the Partner row
+- [ ] **Flip `AUTH_ENFORCE=true`** (env) once the deployed dashboard login is migrated to `POST /auth/login` + Bearer header on every request — until then anonymous calls behave exactly as before Phase 1 (unscoped), so the live Vercel frontend keeps working. This is the deliberate legacy-compat gap; closing it = frontend work, not backend.
 
 ---
 
@@ -243,8 +248,9 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 
 | Issue | Impact | Fix |
 |-------|--------|-----|
-| base64 photos in JSONL | File bloat, slow | Cloudflare R2 |
-| In-memory + JSONL store | Data loss on restart | PostgreSQL |
-| Hardcoded session auth | No real RBAC | JWT + role claims |
+| base64 photos in order docs | Row bloat, slow | Cloudflare R2 |
+| ~~In-memory + JSONL store~~ | ~~Data loss on restart~~ | ✅ PostgreSQL (Phase 1) |
+| ~~Hardcoded session auth~~ | ~~No real RBAC~~ | ✅ JWT + role claims (enforce via AUTH_ENFORCE once frontend migrated) |
 | Shopify webhooks not registered | No orders arrive | Manual registration |
-| `orders.jsonl` full-rewrite on each update | Race conditions at scale | DB transactions |
+| ~~`orders.jsonl` full-rewrite on each update~~ | ~~Race conditions at scale~~ | ✅ DB transactions (Phase 1) |
+| Frontend login still legacy sessionStorage gate | Anonymous API calls stay unscoped | Wire Dashboard.jsx to /auth/login, send Bearer everywhere, flip AUTH_ENFORCE=true |

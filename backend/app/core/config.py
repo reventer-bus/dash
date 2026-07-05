@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     SECRET_KEY: str = "dev-secret-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    # When true, farm endpoints reject anonymous requests instead of
+    # serving them unscoped (legacy dashboard compat). Flip once the
+    # deployed frontend sends a JWT on every request.
+    AUTH_ENFORCE: bool = False
 
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "makerai"

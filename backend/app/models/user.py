@@ -27,7 +27,7 @@ class User(Base):
     role = Column(Enum(UserRole), nullable=False, default=UserRole.partner)
     partner_id = Column(String, ForeignKey("partners.id"), nullable=True)  # null for super_admin
     active = Column(Boolean, default=True)
-    created_at = Column(DateTime, nullable=False)
+    created_at = Column(DateTime(timezone=True), nullable=False)
 
     # internal contact info — NEVER exposed to customer-facing chat relay
     internal_phone = Column(String, nullable=True)

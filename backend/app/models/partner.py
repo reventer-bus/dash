@@ -1,5 +1,4 @@
 from sqlalchemy import Column, String, DateTime, Boolean
-from sqlalchemy.orm import relationship
 from app.core.database import Base
 
 
@@ -11,6 +10,4 @@ class Partner(Base):
     name = Column(String, nullable=False)
     franchise_admin_email = Column(String, nullable=True)
     active = Column(Boolean, default=True)
-    created_at = Column(DateTime, nullable=False)
-
-    printers = relationship("Printer", back_populates="partner")
+    created_at = Column(DateTime(timezone=True), nullable=False)

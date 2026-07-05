@@ -33,14 +33,14 @@ async def list_printers():
 async def register_printer(payload: PrinterRegistration):
     data = payload.model_dump()
     conn = {k: data.pop(k) for k in ("connection_type", "host", "serial", "access_code", "api_key")}
-    farm_store.upsert_printer(data)
-    farm_store.set_printer_connection(data["id"], conn)
+    await farm_store.upsert_printer(data)
+    await farm_store.set_printer_connection(data["id"], conn)
     return {"ok": True, "id": data["id"]}
 
 
 @router.delete("/{printer_id}")
 async def remove_printer(printer_id: str):
-    farm_store.remove_printer(printer_id)
+    await farm_store.remove_printer(printer_id)
     return {"ok": True}
 
 
@@ -64,23 +64,23 @@ async def live_status(printer_id: str):
         return {"error": "Manual printers have no live API — update status via POST /farm/printer"}
 
     if "error" not in data:
-        farm_store.update_printer_live(printer_id, data)
+        await farm_store.update_printer_live(printer_id, data)
     return data
 
 
 @router.post("/{printer_id}/pause")
 async def pause_printer(printer_id: str):
-    farm_store.set_printer_status(printer_id, "paused")
+    await farm_store.set_printer_status(printer_id, "paused")
     return {"status": "paused", "printer_id": printer_id}
 
 
 @router.post("/{printer_id}/resume")
 async def resume_printer(printer_id: str):
-    farm_store.set_printer_status(printer_id, "printing")
+    await farm_store.set_printer_status(printer_id, "printing")
     return {"status": "printing", "printer_id": printer_id}
 
 
 @router.post("/{printer_id}/stop")
 async def stop_printer(printer_id: str):
-    farm_store.set_printer_status(printer_id, "idle")
+    await farm_store.set_printer_status(printer_id, "idle")
     return {"status": "idle", "printer_id": printer_id}

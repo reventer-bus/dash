@@ -1,17 +1,54 @@
 """
 Farm status, feedback, work orders, filament inventory, and printer actions.
 n8n POSTs slice results here; the dashboard polls GET /status.
+
+Access model (Phase 1):
+  - Requests with a JWT are scoped: partner-scoped roles (partner,
+    franchise_admin, technician, artist, space_manager) only see/touch
+    orders assigned to their partner_id; super_admin sees everything.
+  - Admin-only endpoints (assignment, cleanup) reject non-super_admin
+    tokens.
+  - Anonymous requests still work unscoped while AUTH_ENFORCE=false, so
+    the deployed dashboard keeps functioning until its login is migrated
+    to JWT. Flip AUTH_ENFORCE=true to require tokens everywhere.
 """
 
 from datetime import datetime, timezone
 from pathlib import Path
-from fastapi import APIRouter, Depends
-from pydantic import BaseModel
 from typing import Optional
+
+from fastapi import APIRouter, Depends, HTTPException
+from pydantic import BaseModel
+
 from app.services import farm_store
-from app.api.v1.endpoints.auth import get_current_partner
+from app.api.v1.endpoints.auth import get_current_partner, get_optional_user
+from app.models.user import User, UserRole
 
 router = APIRouter()
+
+
+# ── Access helpers ────────────────────────────────────────────────────────────
+
+def _partner_scope(user: Optional[User]) -> Optional[str]:
+    """The partner_id the caller is restricted to, or None for full access
+    (super_admin or legacy anonymous)."""
+    if user is not None and UserRole.scoped_to_partner(user.role):
+        return user.partner_id or ""
+    return None
+
+
+def _ensure_order_access(order: dict, user: Optional[User]):
+    pid = _partner_scope(user)
+    if pid is not None and order.get("assigned_partner") != pid:
+        raise HTTPException(status_code=403, detail="Order not assigned to your partner account")
+
+
+async def require_admin(user: Optional[User] = Depends(get_optional_user)) -> Optional[User]:
+    """super_admin when a token is presented; legacy anonymous passes
+    while AUTH_ENFORCE is off (get_optional_user 401s otherwise)."""
+    if user is not None and user.role != UserRole.super_admin:
+        raise HTTPException(status_code=403, detail="Requires role: super_admin")
+    return user
 
 
 # ── Feedback ──────────────────────────────────────────────────────────────────
@@ -31,20 +68,21 @@ class FeedbackPayload(BaseModel):
 
 @router.post("/feedback")
 async def receive_feedback(payload: FeedbackPayload):
-    entry = farm_store.add_feedback(payload.model_dump())
+    # Machine-to-machine channel (n8n slice results) — no JWT.
+    entry = await farm_store.add_feedback(payload.model_dump())
     return {"ok": True, "received_at": entry["received_at"]}
 
 
 # ── Status + queue ────────────────────────────────────────────────────────────
 
 @router.get("/status")
-async def farm_status():
-    return farm_store.get_status()
+async def farm_status(user: Optional[User] = Depends(get_optional_user)):
+    return farm_store.get_status(partner_id=_partner_scope(user))
 
 
 @router.get("/queue")
-async def farm_queue():
-    return farm_store.get_queue()
+async def farm_queue(user: Optional[User] = Depends(get_optional_user)):
+    return farm_store.get_queue(partner_id=_partner_scope(user))
 
 
 # ── Work orders ───────────────────────────────────────────────────────────────
@@ -85,82 +123,78 @@ class OrderUpdate(BaseModel):
 
 
 @router.patch("/orders/{order_id}")
-async def update_order(order_id: str, payload: OrderUpdate):
+async def update_order(
+    order_id: str,
+    payload: OrderUpdate,
+    user: Optional[User] = Depends(get_optional_user),
+):
+    current = farm_store.get_order(order_id)
+    if current is None:
+        return {"error": "Order not found"}
+    _ensure_order_access(current, user)
+
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
-    # Pull current status so we can append a history entry if it changes
-    current = None
-    for o in farm_store._orders:  # noqa: SLF001 — internal but cheap
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            current = o
-            break
     history_entry = None
-    if current and "status" in updates and updates["status"] != current.get("status"):
+    if "status" in updates and updates["status"] != current.get("status"):
         history_entry = {
             "event": "status_change",
             "from": current.get("status"),
             "to": updates["status"],
             "at": datetime.now(timezone.utc).isoformat(),
         }
-    result = farm_store.update_order(order_id, updates)
+    result = await farm_store.update_order(order_id, updates)
     if result is None:
         return {"error": "Order not found"}
     if history_entry:
         result.setdefault("history", []).append(history_entry)
-        # Persist history append
-        for o in farm_store._orders:  # noqa: SLF001
-            if o.get("id") == order_id or o.get("spec_id") == order_id:
-                o["history"] = result["history"]
-                farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)
-                break
+        await farm_store.save_order(result)
     # Auto-trigger Shopify push on DONE / DISPATCH for Shopify orders.
     # Dry-runs are safe (no HTTP call when SHOPIFY_ADMIN_TOKEN unset).
-    new_status = (updates or {}).get("status")
+    new_status = updates.get("status")
     if new_status in ("DONE", "DISPATCH") and result.get("shopify_order_id"):
         from app.services import shopify_pusher
         push_record = await shopify_pusher.auto_push_if_needed(result, new_status)
         if push_record:
             result.setdefault("history", []).append(push_record)
-            for o in farm_store._orders:  # noqa: SLF001
-                if o.get("id") == order_id or o.get("spec_id") == order_id:
-                    o["history"] = result["history"]
-                    farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)
-                    break
+            await farm_store.save_order(result)
     return result
 
 
 @router.get("/orders/{order_id}/shopify-history")
-async def order_shopify_history(order_id: str):
+async def order_shopify_history(order_id: str, user: Optional[User] = Depends(get_optional_user)):
     """Return the most recent shopify-push + status-change history entries.
 
     Used by the enlarged card modal to show 'what we told Shopify' without
-    forcing the partner to dig through the full JSONL history array.
+    forcing the partner to dig through the full history array.
     """
-    order = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            order = o
-            break
+    order = farm_store.get_order(order_id)
     if order is None:
         return {"error": "Order not found"}
+    _ensure_order_access(order, user)
     from app.services import shopify_pusher
+    import os
     return {
         "order_id": order_id,
         "shopify_order_id": order.get("shopify_order_id"),
-        "shopify_configured": bool(__import__("os").environ.get("SHOPIFY_ADMIN_TOKEN", "")),
+        "shopify_configured": bool(os.environ.get("SHOPIFY_ADMIN_TOKEN", "")),
         "history": shopify_pusher.history_summary(order, limit=10),
     }
 
 
 @router.delete("/orders/{order_id}")
-async def cancel_order(order_id: str):
-    ok = farm_store.cancel_order(order_id)
+async def cancel_order(order_id: str, _admin: Optional[User] = Depends(require_admin)):
+    ok = await farm_store.cancel_order(order_id)
     return {"ok": ok}
 
 
 @router.post("/queue/{job_id}/assign")
-async def assign_job(job_id: str, body: dict):
+async def assign_job(job_id: str, body: dict, user: Optional[User] = Depends(get_optional_user)):
+    order = farm_store.get_order(job_id)
+    if order is None:
+        return {"error": "Job not found"}
+    _ensure_order_access(order, user)
     printer_id = body.get("printer_id", "")
-    result = farm_store.assign_job(job_id, printer_id)
+    result = await farm_store.assign_job(job_id, printer_id)
     if result is None:
         return {"error": "Job not found"}
     return result
@@ -180,7 +214,7 @@ class PrinterPayload(BaseModel):
 
 @router.post("/printer")
 async def register_printer(payload: PrinterPayload):
-    farm_store.upsert_printer(payload.model_dump())
+    await farm_store.upsert_printer(payload.model_dump())
     return {"ok": True}
 
 
@@ -190,7 +224,7 @@ async def printer_action(printer_id: str, action: str):
     new_status = status_map.get(action)
     if not new_status:
         return {"error": "unknown action"}
-    farm_store.set_printer_status(printer_id, new_status)
+    await farm_store.set_printer_status(printer_id, new_status)
     return {"printer_id": printer_id, "status": new_status}
 
 
@@ -230,33 +264,35 @@ class SpoolUpdate(BaseModel):
 
 
 @router.get("/inventory")
-async def farm_inventory():
+async def farm_inventory(_user: Optional[User] = Depends(get_optional_user)):
     return farm_store.get_inventory()
 
 
 @router.post("/inventory")
-async def add_spool(payload: SpoolPayload):
+async def add_spool(payload: SpoolPayload, _user: Optional[User] = Depends(get_optional_user)):
     data = {k: v for k, v in payload.model_dump().items() if v is not None}
-    return farm_store.add_spool(data)
+    return await farm_store.add_spool(data)
 
 
 @router.put("/inventory/{spool_id}")
-async def update_spool(spool_id: str, payload: SpoolUpdate):
+async def update_spool(
+    spool_id: str, payload: SpoolUpdate, _user: Optional[User] = Depends(get_optional_user)
+):
     updates = {k: v for k, v in payload.model_dump().items() if v is not None}
-    result = farm_store.update_spool(spool_id, updates)
+    result = await farm_store.update_spool(spool_id, updates)
     if result is None:
         return {"error": "Spool not found"}
     return result
 
 
 @router.delete("/inventory/{spool_id}")
-async def delete_spool(spool_id: str):
-    farm_store.remove_spool(spool_id)
+async def delete_spool(spool_id: str, _user: Optional[User] = Depends(get_optional_user)):
+    await farm_store.remove_spool(spool_id)
     return {"ok": True}
 
 
 @router.get("/inventory/alerts")
-async def inventory_alerts():
+async def inventory_alerts(_user: Optional[User] = Depends(get_optional_user)):
     """Return low-stock and critical-stock spool alerts.
 
     Spools at or below their `critical_threshold_g` (default 50g) appear in
@@ -267,30 +303,31 @@ async def inventory_alerts():
 
 
 @router.get("/analytics")
-async def farm_analytics():
+async def farm_analytics(user: Optional[User] = Depends(get_optional_user)):
     """Farm-wide analytics: sales, waste, quality, speed, assigned time,
     delivery time, plus breakdowns by status / material / partner.
 
-    Computed live from the current in-memory orders list. No persistent
-    analytics store; cost is O(N) over orders, <10ms for 500 orders.
-
-    Each metric returns `None` (or 0 with `samples: 0`) if there's not
-    enough data — the UI shows "no data" instead of misleading zeros.
+    Computed live from the order cache — partner-scoped tokens get
+    analytics over their own orders only. Each metric returns `None`
+    (or 0 with `samples: 0`) if there's not enough data — the UI shows
+    "no data" instead of misleading zeros.
     """
     from app.services import analytics as analytics_svc
-    return analytics_svc.compute_analytics(farm_store._orders)  # noqa: SLF001
+    pid = _partner_scope(user)
+    orders = farm_store.all_orders() if pid is None else farm_store.orders_for_partner(pid)
+    return analytics_svc.compute_analytics(orders)
 
 
 # ── Partner assignment + visibility ──────────────────────────────────────────
 
 @router.get("/partners")
-async def list_partners_with_orders():
+async def list_partners_with_orders(_admin: Optional[User] = Depends(require_admin)):
     """Aggregate per-partner stats. Operators use this to assign work."""
     return {"partners": farm_store.list_partners_with_stats()}
 
 
 @router.get("/partners/unassigned")
-async def list_unassigned_orders():
+async def list_unassigned_orders(_admin: Optional[User] = Depends(require_admin)):
     """Orders with no `assigned_partner` set — the work queue.
 
     Excludes terminal states (CANCELLED) so cancelled orders don't show
@@ -298,7 +335,7 @@ async def list_unassigned_orders():
     returned so an admin can pick any of them to assign.
     """
     out = []
-    for o in farm_store._orders:  # noqa: SLF001
+    for o in farm_store.all_orders():
         if o.get("assigned_partner"):
             continue
         if o.get("status") == "CANCELLED":
@@ -323,13 +360,17 @@ class UnassignPayload(BaseModel):
 
 
 @router.post("/orders/{order_id}/unassign")
-async def unassign_partner(order_id: str, body: UnassignPayload | None = None):
+async def unassign_partner(
+    order_id: str,
+    body: UnassignPayload | None = None,
+    _admin: Optional[User] = Depends(require_admin),
+):
     """Admin-only: clear the partner assignment on an order.
 
     Body (optional): { "reason": "free text recorded in history" }
     """
     reason = (body.reason if body else None) or "unassigned by admin"
-    result = farm_store.unassign_partner(order_id, reason=reason)
+    result = await farm_store.unassign_partner(order_id, reason=reason)
     if result is None:
         return {"error": "Order not found"}
     return result
@@ -342,7 +383,7 @@ class BulkAssignPayload(BaseModel):
 
 
 @router.post("/partners/bulk-assign")
-async def bulk_assign(payload: BulkAssignPayload):
+async def bulk_assign(payload: BulkAssignPayload, _admin: Optional[User] = Depends(require_admin)):
     """Admin-only: assign many orders to one partner in one call.
 
     Useful when shifting a backlog: pick 10 unassigned orders from the
@@ -359,26 +400,18 @@ async def bulk_assign(payload: BulkAssignPayload):
     failed: list[dict] = []
     for oid in payload.order_ids:
         # Skip if already assigned to a DIFFERENT partner
-        current = None
-        for o in farm_store._orders:  # noqa: SLF001
-            if (o.get("id") or o.get("spec_id")) == oid:
-                current = o
-                break
+        current = farm_store.get_order(oid)
         if current and current.get("assigned_partner") and current["assigned_partner"] != payload.partner_id:
             skipped.append({"id": oid, "current_partner": current["assigned_partner"]})
             continue
-        result = farm_store.assign_partner(oid, payload.partner_id)
+        result = await farm_store.assign_partner(oid, payload.partner_id)
         if result is None:
             failed.append({"id": oid, "reason": "Order not found"})
             continue
         if payload.partner_name:
-            for o in farm_store._orders:  # noqa: SLF001
-                if (o.get("id") or o.get("spec_id")) == oid:
-                    o["assigned_partner_name"] = payload.partner_name
-                    break
+            result["assigned_partner_name"] = payload.partner_name
+            await farm_store.save_order(result)
         assigned.append(oid)
-    if payload.partner_name:
-        farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)  # noqa: SLF001
     return {
         "assigned": assigned,
         "skipped": skipped,
@@ -388,24 +421,28 @@ async def bulk_assign(payload: BulkAssignPayload):
 
 
 @router.get("/partners/{partner_id}")
-async def partner_detail(partner_id: str):
+async def partner_detail(partner_id: str, user: Optional[User] = Depends(get_optional_user)):
     """Single-partner detail: stats + full order list (active first)."""
+    pid = _partner_scope(user)
+    if pid is not None and partner_id != pid:
+        raise HTTPException(status_code=403, detail="Not your partner account")
     stats_list = farm_store.list_partners_with_stats()
     this = next((p for p in stats_list if p["partner_id"] == partner_id), None)
     if not this:
         return {"error": "Partner has no orders yet"}
     # Get the name from any of the assigned orders
     name = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("assigned_partner") == partner_id:
-            name = o.get("assigned_partner_name") or name
-            if o.get("assigned_partner_name"):
-                break
+    for o in farm_store.orders_for_partner(partner_id):
+        if o.get("assigned_partner_name"):
+            name = o["assigned_partner_name"]
+            break
     return {**this, "partner_name": name or partner_id}
 
 
 @router.post("/orders/{order_id}/assign-partner")
-async def assign_partner_to_order(order_id: str, body: dict):
+async def assign_partner_to_order(
+    order_id: str, body: dict, _admin: Optional[User] = Depends(require_admin)
+):
     """
     Admin-only: assign a Shopify order to a partner.
     Body: { "partner_id": "ptr_xxx", "partner_name": "optional display name" }
@@ -414,37 +451,36 @@ async def assign_partner_to_order(order_id: str, body: dict):
     if not partner_id:
         return {"error": "partner_id is required"}
     partner_name = (body or {}).get("partner_name", "").strip() or None
-    result = farm_store.assign_partner(order_id, partner_id)
+    result = await farm_store.assign_partner(order_id, partner_id)
     if result is None:
         return {"error": "Order not found"}
     if partner_name:
         # Remember the display name so the dashboard doesn't have to look it up
-        for o in farm_store._orders:  # noqa: SLF001
-            if o.get("id") == order_id or o.get("spec_id") == order_id:
-                o["assigned_partner_name"] = partner_name
-                farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)
-                result = o
-                break
+        result["assigned_partner_name"] = partner_name
+        await farm_store.save_order(result)
     return result
 
 
 @router.get("/orders/by-partner/{partner_id}")
-async def orders_for_partner(partner_id: str):
+async def orders_for_partner(partner_id: str, user: Optional[User] = Depends(get_optional_user)):
     """Partner-scoped view: all orders assigned to a single partner."""
+    pid = _partner_scope(user)
+    if pid is not None and partner_id != pid:
+        raise HTTPException(status_code=403, detail="Not your partner account")
     return {"orders": farm_store.orders_for_partner(partner_id)}
 
 
 @router.get("/orders/mine")
-async def my_orders(user: dict = Depends(get_current_partner)):
+async def my_orders(user: User = Depends(get_current_partner)):
     """
     Partner view: every order assigned to the current JWT.
 
-    Admins see ALL orders (same as /status). Partners see only their own.
+    super_admin sees ALL orders (same as /status). Partners see only their own.
     """
-    if user.get("role") == "admin":
-        return {"orders": farm_store._orders, "role": "admin"}  # noqa: SLF001
-    pid = user.get("partner_id") or ""
-    return {"orders": farm_store.orders_for_partner(pid), "role": "partner", "partner_id": pid}
+    if user.role == UserRole.super_admin:
+        return {"orders": farm_store.all_orders(), "role": user.role.value}
+    pid = user.partner_id or ""
+    return {"orders": farm_store.orders_for_partner(pid), "role": user.role.value, "partner_id": pid}
 
 
 # ── Shopify return channel ───────────────────────────────────────────────────
@@ -459,7 +495,9 @@ class ShopifyPushRequest(BaseModel):
 
 
 @router.post("/orders/{order_id}/shopify-push")
-async def push_to_shopify(order_id: str, body: ShopifyPushRequest):
+async def push_to_shopify(
+    order_id: str, body: ShopifyPushRequest, user: Optional[User] = Depends(get_optional_user)
+):
     """
     Push a printdash status change / tracking back to Shopify via Admin API.
 
@@ -467,13 +505,10 @@ async def push_to_shopify(order_id: str, body: ShopifyPushRequest):
     locally but no HTTP call is made — the caller gets a 200 with `dry_run=True`.
     """
     # 1. Find the order locally first
-    order = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            order = o
-            break
+    order = farm_store.get_order(order_id)
     if order is None:
         return {"error": "Order not found"}
+    _ensure_order_access(order, user)
 
     shopify_id = order.get("shopify_order_id")
     if not shopify_id:
@@ -498,8 +533,7 @@ async def push_to_shopify(order_id: str, body: ShopifyPushRequest):
         push_record["result"] = "dry_run"
         push_record["reason"] = "SHOPIFY_ADMIN_TOKEN not set"
         order.setdefault("history", []).append(push_record)
-        # Persist
-        farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)  # noqa: SLF001
+        await farm_store.save_order(order)
         logger.info("shopify-push dry-run for %s: %s", shopify_id, body.model_dump(exclude_none=True))
         return {"ok": True, "dry_run": True, "reason": push_record["reason"], "history": order["history"][-1]}
 
@@ -532,14 +566,8 @@ async def push_to_shopify(order_id: str, body: ShopifyPushRequest):
                         "company": body.tracking_company or "Other",
                         "url": body.tracking_url or "",
                     },
-                    "line_items": [
-                        {"id": li.get("shopify_line_item_id")}
-                        for li in (order.get("line_items") or [])
-                        if li.get("shopify_line_item_id")
-                    ] or None,
                 }
             }
-            payload["fulfillment"].pop("line_items", None)
             r = await client.post(fulfill_url, headers=headers, json=payload)
             push_record["fulfillment_post_status"] = r.status_code
             if r.status_code >= 400:
@@ -552,7 +580,7 @@ async def push_to_shopify(order_id: str, body: ShopifyPushRequest):
 
     push_record["result"] = "ok"
     order.setdefault("history", []).append(push_record)
-    farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)  # noqa: SLF001
+    await farm_store.save_order(order)
 
     return {
         "ok": True,
@@ -580,7 +608,7 @@ _KIND_MIME = {
 
 
 @router.get("/orders/{order_id}/file-resolve")
-async def resolve_order_file(order_id: str):
+async def resolve_order_file(order_id: str, user: Optional[User] = Depends(get_optional_user)):
     """
     Decide where the 3D file for this order lives.
 
@@ -598,6 +626,7 @@ async def resolve_order_file(order_id: str):
     order = file_resolver.find_order(order_id)
     if order is None:
         return {"ok": False, "error": "Order not found", "order_id": order_id}
+    _ensure_order_access(order, user)
     return await file_resolver.resolve_file_for_order(order)
 
 
@@ -608,7 +637,7 @@ async def upload_attachment(
     kind: str = Form(default="document"),
     uploaded_by: str = Form(default=""),
     note: str = Form(default=""),
-    _user: dict = Depends(get_current_partner),
+    user: User = Depends(get_current_partner),
 ):
     """
     Attach a file to an order. kind ∈ {3d_model, sliced_3mf, photo, document}.
@@ -619,13 +648,10 @@ async def upload_attachment(
     For photos: max 10 MB, image MIME only, GPS EXIF data is stripped for
     privacy before writing to disk.
     """
-    order = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            order = o
-            break
+    order = farm_store.get_order(order_id)
     if order is None:
         return {"ok": False, "error": "Order not found"}
+    _ensure_order_access(order, user)
 
     if kind not in _KIND_MIME:
         return {"ok": False, "error": f"kind must be one of {list(_KIND_MIME)}"}
@@ -666,13 +692,13 @@ async def upload_attachment(
         "kind": kind,
         "mime": mime,
         "size_bytes": len(body),
-        "uploaded_by": uploaded_by or "unknown",
+        "uploaded_by": uploaded_by or user.email or "unknown",
         "uploaded_at": datetime.now(timezone.utc).isoformat(),
         "note": note,
         "disk_path": str(disk_path),
         "download_url": f"/api/v1/farm/orders/{order_id}/download/{att_id}",
     }
-    farm_store.add_attachment(order_id, attachment)
+    await farm_store.add_attachment(order_id, attachment)
     return {"ok": True, "attachment": attachment, "order_id": order_id}
 
 
@@ -781,15 +807,12 @@ def _exif_remove_gps(seg_data: bytes) -> bytes | None:
 
 
 @router.get("/orders/{order_id}/attachments")
-async def list_order_attachments(order_id: str):
+async def list_order_attachments(order_id: str, user: Optional[User] = Depends(get_optional_user)):
     """Return metadata for every file attached to an order."""
-    order = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            order = o
-            break
+    order = farm_store.get_order(order_id)
     if order is None:
         return {"ok": False, "error": "Order not found", "attachments": []}
+    _ensure_order_access(order, user)
     return {
         "ok": True,
         "order_id": order_id,
@@ -798,8 +821,13 @@ async def list_order_attachments(order_id: str):
 
 
 @router.get("/orders/{order_id}/download/{attachment_id}")
-async def download_attachment(order_id: str, attachment_id: str):
+async def download_attachment(
+    order_id: str, attachment_id: str, user: Optional[User] = Depends(get_optional_user)
+):
     """Serve the bytes of an attachment with the right Content-Type."""
+    order = farm_store.get_order(order_id)
+    if order is not None:
+        _ensure_order_access(order, user)
     atts = farm_store.list_attachments(order_id)
     att = next((a for a in atts if a.get("id") == attachment_id), None)
     if att is None:
@@ -833,7 +861,9 @@ class PrintAttemptPayload(BaseModel):
 
 
 @router.post("/orders/{order_id}/print-attempt")
-async def record_print_attempt(order_id: str, body: PrintAttemptPayload, user: dict = Depends(get_current_partner)):
+async def record_print_attempt(
+    order_id: str, body: PrintAttemptPayload, user: User = Depends(get_current_partner)
+):
     """
     Append a print attempt to the order's print_history[].
 
@@ -844,18 +874,15 @@ async def record_print_attempt(order_id: str, body: PrintAttemptPayload, user: d
       Order transitions back to AI_PREP (or POST_PROCESS) for redo,
       copies error_text to admin_notes so the admin sees it next refresh.
     """
-    order = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            order = o
-            break
+    order = farm_store.get_order(order_id)
     if order is None:
         return {"ok": False, "error": "Order not found"}
+    _ensure_order_access(order, user)
 
     now = datetime.now(timezone.utc).isoformat()
     attempt = {
         "status": body.status,
-        "started_by": body.started_by,
+        "started_by": body.started_by or user.email,
         "started_at": body.started_at or now,
         "finished_at": body.finished_at or (now if body.status != "started" else None),
         "error_text": body.error_text,
@@ -863,7 +890,7 @@ async def record_print_attempt(order_id: str, body: PrintAttemptPayload, user: d
         "printer_id": body.printer_id,
         "notes": body.notes,
     }
-    farm_store.record_print_attempt(order_id, attempt)
+    await farm_store.record_print_attempt(order_id, attempt)
 
     # Side-effect: status transitions on success / failure
     transitions = []
@@ -883,11 +910,12 @@ async def record_print_attempt(order_id: str, body: PrintAttemptPayload, user: d
             transitions.append({"from": current, "to": "POST_PROCESS", "reason": "failed"})
     elif body.status == "started":
         # Mark as PRINTING if currently earlier in the pipeline
-        if order.get("status") in ("NEW", "AI_PREP"):
+        prev = order.get("status")
+        if prev in ("NEW", "AI_PREP"):
             order["status"] = "PRINTING"
-            transitions.append({"from": order["status"], "to": "PRINTING"})
+            transitions.append({"from": prev, "to": "PRINTING"})
 
-    farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)  # noqa: SLF001
+    await farm_store.save_order(order)
     return {
         "ok": True,
         "attempt": attempt,
@@ -897,18 +925,15 @@ async def record_print_attempt(order_id: str, body: PrintAttemptPayload, user: d
 
 
 @router.post("/orders/{order_id}/mark-redo")
-async def mark_redo(order_id: str, _user: dict = Depends(get_current_partner)):
+async def mark_redo(order_id: str, user: User = Depends(get_current_partner)):
     """
     Operator action: clear the redo flag and move the order back to PRINTING
     for another attempt. Records a redo event in history.
     """
-    order = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            order = o
-            break
+    order = farm_store.get_order(order_id)
     if order is None:
         return {"ok": False, "error": "Order not found"}
+    _ensure_order_access(order, user)
     order["needs_redo"] = False
     if order.get("status") in ("POST_PROCESS", "PRINTING"):
         order["status"] = "PRINTING"
@@ -916,11 +941,9 @@ async def mark_redo(order_id: str, _user: dict = Depends(get_current_partner)):
         "event": "redo_marked",
         "at": datetime.now(timezone.utc).isoformat(),
     })
-    farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)  # noqa: SLF001
+    await farm_store.save_order(order)
     return {"ok": True, "order": order}
 
-
-# ── Admin: cleanup test data ───────────────────────────────────────────────
 
 # ── Comments / per-order chat thread ────────────────────────────────────────
 
@@ -936,28 +959,24 @@ class CommentPayload(BaseModel):
 async def add_order_comment(
     order_id: str,
     payload: CommentPayload,
-    user: dict = Depends(get_current_partner),
+    user: User = Depends(get_current_partner),
 ):
     """Post a comment to an order's thread.
 
     Requires partner or admin JWT. The author info is taken from the JWT
-    (user dict) if not explicitly provided in the payload.
+    if not explicitly provided in the payload.
     """
-    # Verify order exists
-    order = None
-    for o in farm_store._orders:  # noqa: SLF001
-        if o.get("id") == order_id or o.get("spec_id") == order_id:
-            order = o
-            break
+    order = farm_store.get_order(order_id)
     if order is None:
         return {"ok": False, "error": "Order not found"}
+    _ensure_order_access(order, user)
 
     # Use JWT user info as source of truth for author
-    author_id = user.get("partner_id") or user.get("email") or payload.author_id
-    author_name = user.get("name") or user.get("email") or payload.author_name
-    author_role = user.get("role", payload.author_role)
+    author_id = user.partner_id or user.email or payload.author_id
+    author_name = user.name or user.email or payload.author_name
+    author_role = user.role.value if user.role else payload.author_role
 
-    comment = farm_store.add_comment(order_id, {
+    comment = await farm_store.add_comment(order_id, {
         "text": payload.text.strip(),
         "author_id": author_id,
         "author_name": author_name,
@@ -982,11 +1001,11 @@ async def list_order_comments(order_id: str):
 async def mark_comment_read(
     order_id: str,
     comment_id: str,
-    user: dict = Depends(get_current_partner),
+    user: User = Depends(get_current_partner),
 ):
     """Mark a comment as read by the current user. Idempotent."""
-    user_id = user.get("partner_id") or user.get("email") or ""
-    result = farm_store.mark_comment_read(order_id, comment_id, user_id)
+    user_id = user.partner_id or user.email or ""
+    result = await farm_store.mark_comment_read(order_id, comment_id, user_id)
     if result is None:
         return {"ok": False, "error": "Comment not found"}
     return {"ok": True, "comment": result}
@@ -995,10 +1014,10 @@ async def mark_comment_read(
 @router.get("/orders/{order_id}/comments/unread")
 async def unread_count(
     order_id: str,
-    user: dict = Depends(get_current_partner),
+    user: User = Depends(get_current_partner),
 ):
     """Return the count of unread comments for the current user on this order."""
-    user_id = user.get("partner_id") or user.get("email") or ""
+    user_id = user.partner_id or user.email or ""
     count = farm_store.unread_comment_count(order_id, user_id)
     return {"ok": True, "order_id": order_id, "unread": count}
 
@@ -1021,7 +1040,7 @@ _KNOWN_TEST_IDS = {
 
 
 @router.post("/admin/cleanup-test-data")
-async def cleanup_test_data(dry_run: bool = False):
+async def cleanup_test_data(dry_run: bool = False, _admin: Optional[User] = Depends(require_admin)):
     """
     Remove test-residue orders so the dashboard shows only real work.
 
@@ -1037,7 +1056,7 @@ async def cleanup_test_data(dry_run: bool = False):
     """
     removed = []
     keep = []
-    for o in farm_store._orders:  # noqa: SLF001
+    for o in farm_store.all_orders():
         oid = o.get("id") or o.get("spec_id") or ""
         sid = o.get("shopify_order_id")
         email = (o.get("customer_email") or "").lower()
@@ -1061,10 +1080,7 @@ async def cleanup_test_data(dry_run: bool = False):
             keep.append(oid)
 
     if not dry_run:
-        remove_ids = {r["id"] for r in removed}
-        farm_store._orders[:] = [o for o in farm_store._orders
-                                   if (o.get("id") or o.get("spec_id")) not in remove_ids]  # noqa: SLF001
-        farm_store._rewrite_jsonl(farm_store._ORDERS_PATH, farm_store._orders)  # noqa: SLF001
+        await farm_store.remove_orders({r["id"] for r in removed})
 
     return {
         "ok": True,

@@ -148,6 +148,35 @@ async def get_current_partner(user: User = Depends(get_current_user)) -> User:
     return user
 
 
+async def get_optional_user(
+    token: Optional[str] = Depends(oauth2_scheme),
+    db: AsyncSession = Depends(get_db),
+) -> Optional[User]:
+    """Resolve the user when a bearer token is presented; None otherwise.
+
+    Legacy-compat scoping: the deployed dashboard doesn't send a JWT on
+    every request yet, so most farm endpoints accept anonymous calls and
+    only *scope* results when a token is present. Set AUTH_ENFORCE=true
+    (env) to reject anonymous calls outright once the frontend login is
+    migrated. A presented-but-invalid token is always a 401 — a bad token
+    must never silently downgrade to anonymous access.
+    """
+    if not token:
+        if settings.AUTH_ENFORCE:
+            raise HTTPException(
+                status_code=status.HTTP_401_UNAUTHORIZED,
+                detail="Missing bearer token",
+                headers={"WWW-Authenticate": "Bearer"},
+            )
+        return None
+    payload = _decode_token(token)
+    result = await db.execute(select(User).where(User.email == payload.get("sub")))
+    user = result.scalar_one_or_none()
+    if not user or not user.active:
+        raise HTTPException(status_code=401, detail="User not found or inactive")
+    return user
+
+
 def require_role(*allowed: UserRole):
     """FastAPI dependency factory: require_role(UserRole.technician, UserRole.super_admin)"""
     async def _dep(user: User = Depends(get_current_user)) -> User:
@@ -158,10 +187,41 @@ def require_role(*allowed: UserRole):
 
 
 @router.post("/register", response_model=TokenResponse, status_code=201)
-async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
+async def register(
+    req: RegisterRequest,
+    db: AsyncSession = Depends(get_db),
+    requester: Optional[User] = Depends(get_optional_user),
+):
     existing = await db.execute(select(User).where(User.email == req.email))
     if existing.scalar_one_or_none():
         raise HTTPException(status_code=409, detail="Email already registered")
+
+    # Role escalation guard: only a super_admin can create accounts with a
+    # role other than 'partner'. Exception: the very first account may pick
+    # its role, so the initial super_admin can be bootstrapped.
+    role = req.role
+    if role != UserRole.partner and (requester is None or requester.role != UserRole.super_admin):
+        user_count = (await db.execute(select(User.id).limit(1))).first()
+        if user_count is not None:
+            raise HTTPException(
+                status_code=403,
+                detail="Only a super_admin can create accounts with elevated roles",
+            )
+
+    # users.partner_id FKs partners — get-or-create the Partner row so
+    # registering the first account for a new franchise doesn't 500.
+    if req.partner_id:
+        from app.models.partner import Partner
+        existing_partner = await db.execute(select(Partner).where(Partner.id == req.partner_id))
+        if existing_partner.scalar_one_or_none() is None:
+            db.add(Partner(
+                id=req.partner_id,
+                slug=req.partner_id.lower().replace(" ", "-"),
+                name=req.name,
+                franchise_admin_email=req.email,
+                active=True,
+                created_at=datetime.now(timezone.utc),
+            ))
 
     user_id = f"usr_{int(time.time() * 1000)}"
     user = User(
@@ -169,7 +229,7 @@ async def register(req: RegisterRequest, db: AsyncSession = Depends(get_db)):
         email=req.email,
         name=req.name,
         hashed_password=_hash_password(req.password),
-        role=req.role,
+        role=role,
         partner_id=req.partner_id,
         active=True,
         created_at=datetime.now(timezone.utc),

@@ -202,4 +202,4 @@ async def _process_order(order: dict):
         "ts": order.get("created_at"),
     }
 
-    farm_store.add_shopify_order(job)
+    await farm_store.add_shopify_order(job)

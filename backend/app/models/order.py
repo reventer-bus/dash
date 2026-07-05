@@ -1,10 +1,22 @@
-from sqlalchemy import Column, String, DateTime, Enum, ForeignKey
-from sqlalchemy.orm import relationship
-from app.core.database import Base
+"""
+Order document model (Phase 1 — farm_store DB rewire).
+
+Orders flow through the system as free-form dicts: the Shopify webhook,
+slicer feedback, Kanban dashboard, and n8n all read/write the same shape
+(history[], attachments[], print_history[], admin_notes, ...). Rather than
+force that into rigid columns, the full dict is stored in `data` and the
+fields the API filters on are mirrored into indexed columns on every save.
+`data` is the source of truth; the columns are query accelerators.
+"""
+from sqlalchemy import Column, String
+from app.core.database import Base, JsonDoc
 import enum
 
 
 class OrderStatus(str, enum.Enum):
+    """Kanban pipeline stages. The `status` column is a plain string because
+    real orders also carry non-pipeline states (LOGGED, FLAGGED, CANCELLED,
+    DONE) written by the slicer-feedback and cancel paths."""
     NEW = "NEW"
     AI_PREP = "AI_PREP"
     PRINTING = "PRINTING"
@@ -17,13 +29,9 @@ class OrderStatus(str, enum.Enum):
 class Order(Base):
     __tablename__ = "orders"
 
-    id = Column(String, primary_key=True)
-    customer_id = Column(String, nullable=False)
-    customer_name = Column(String, nullable=False)
-    file_url = Column(String)
-    material = Column(String, default="PLA")
-    status = Column(Enum(OrderStatus), default=OrderStatus.NEW, index=True)
-    assigned_printer_id = Column(String, ForeignKey("printers.id"))
-    deadline = Column(DateTime, nullable=False)
-    created_at = Column(DateTime, nullable=False)
-    partner_id = Column(String, ForeignKey("partners.id"), nullable=False, index=True)
+    id = Column(String, primary_key=True)                       # "shopify-<id>" / "ord-<ts>" / spec_id
+    status = Column(String, nullable=False, default="NEW", index=True)
+    assigned_partner = Column(String, nullable=True, index=True)
+    shopify_order_id = Column(String, nullable=True, index=True)
+    created_at = Column(String, nullable=True)                  # ISO-8601 string, matches dict shape
+    data = Column(JsonDoc, nullable=False, default=dict)        # the full order dict

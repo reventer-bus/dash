@@ -9,6 +9,7 @@ from app.services import farm_store
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await farm_store.startup_load()
+    await farm_store.start_archive_task()
     yield
 
 

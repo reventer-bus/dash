@@ -18,8 +18,12 @@ store. The JSONL files are left on disk untouched as a manual fallback.
 
 import json
 import os
+import asyncio
+import logging
 from pathlib import Path
-from datetime import datetime, timezone
+from datetime import datetime, timezone, timedelta
+
+logger = logging.getLogger(__name__)
 
 from sqlalchemy import delete, func, select
 
@@ -36,6 +40,10 @@ _PRINTERS_PATH = _DIR / "printers.jsonl"
 _COMMENTS_PATH = _DIR / "comments.jsonl"
 _ATTACHMENTS_DIR = _DIR / "attachments"
 _ATTACHMENTS_DIR.mkdir(parents=True, exist_ok=True)
+
+ARCHIVE_RETENTION_DAYS = 14
+_ARCHIVED_ORDERS_PATH = _DIR / "orders.archive.jsonl"
+_ARCHIVED_COMMENTS_PATH = _DIR / "comments.archive.jsonl"
 
 _orders: list[dict] = []
 _feedback: list[dict] = []
@@ -110,6 +118,13 @@ async def _persist_printer(printer_id: str):
 async def _persist_spool(spool: dict):
     async with session_scope() as s:
         await s.merge(Spool(id=spool["id"], data=dict(spool)))
+
+
+def _append_jsonl_bulk(path: Path, records: list[dict]):
+    _ensure_dir()
+    with open(path, "a") as f:
+        for r in records:
+            f.write(json.dumps(r) + "\n")
 
 
 # ── Startup ───────────────────────────────────────────────────────────────────
@@ -232,11 +247,17 @@ def get_status(partner_id: str | None = None) -> dict:
     orders = _orders if partner_id is None else orders_for_partner(partner_id)
     feedback = _feedback if partner_id is None else []
     printing = sum(1 for p in _printers if p.get("status") == "printing")
-    flagged  = sum(1 for f in feedback if f.get("flagged_for_review"))
+    flagged  = sum(1 for f in _feedback if f.get("flagged_for_review"))
+    orders_with_comments = []
+    for o in _orders:
+        oid = o.get("id") or o.get("spec_id")
+        o2 = dict(o)
+        o2["comments"] = [c for c in _comments if c.get("order_id") == oid]
+        orders_with_comments.append(o2)
     return {
         "printers": _printers,
-        "feedback": feedback,
-        "orders":   orders,
+        "feedback": _feedback,
+        "orders":   orders_with_comments,
         "stats": {
             "active_orders": len([o for o in orders if o.get("status") not in ("DISPATCH", "LOGGED")]),
             "printing":  printing,
@@ -249,6 +270,23 @@ def get_status(partner_id: str | None = None) -> dict:
 def get_queue(partner_id: str | None = None) -> list[dict]:
     orders = _orders if partner_id is None else orders_for_partner(partner_id)
     return [o for o in orders if o.get("status") not in ("DISPATCH", "LOGGED", "CANCELLED")]
+
+
+def get_archive() -> dict:
+    """Return orders and comments moved to the archive files."""
+    archived_orders = _load_jsonl(_ARCHIVED_ORDERS_PATH)
+    archived_comments = _load_jsonl(_ARCHIVED_COMMENTS_PATH)
+    orders_with_comments = []
+    for o in archived_orders:
+        oid = o.get("id") or o.get("spec_id")
+        o2 = dict(o)
+        o2["comments"] = [c for c in archived_comments if c.get("order_id") == oid]
+        orders_with_comments.append(o2)
+    return {
+        "orders": orders_with_comments,
+        "comments": archived_comments,
+        "count": len(archived_orders),
+    }
 
 
 # ── Printers ──────────────────────────────────────────────────────────────────
@@ -296,6 +334,113 @@ async def update_printer_live(printer_id: str, live: dict):
             await _persist_printer(printer_id)
             return
 
+
+def _persist_printers():
+    rows = []
+    for p in _printers:
+        conn = _printer_connections.get(p["id"], {})
+        rows.append({**p, **conn})
+    _rewrite_jsonl(_PRINTERS_PATH, rows)
+
+
+# ── Archival ──────────────────────────────────────────────────────────────────
+
+def _parse_ts(ts: str | None) -> datetime | None:
+    if not ts:
+        return None
+    try:
+        # Handle ISO formats with or without timezone
+        return datetime.fromisoformat(ts.replace("Z", "+00:00"))
+    except ValueError:
+        return None
+
+
+def archive_fulfilled_orders() -> dict:
+    """Move orders fulfilled (DISPATCH) >= 14 days ago to archive files.
+
+    A/C hybrid behaviour:
+      - Orders are kept as-is while active.
+      - 14 days after DISPATCH they are moved to orders.archive.jsonl
+        and their comments to comments.archive.jsonl.
+      - The order status is set to ARCHIVED before moving so the record
+        shows it was retired, not lost.
+    Returns a summary of what was archived.
+    """
+    global _orders, _comments
+    cutoff = datetime.now(timezone.utc) - timedelta(days=ARCHIVE_RETENTION_DAYS)
+
+    to_archive: list[dict] = []
+    kept_orders: list[dict] = []
+    for o in _orders:
+        status = o.get("status", "NEW")
+        if status != "DISPATCH":
+            kept_orders.append(o)
+            continue
+        dispatched_at = None
+        for h in reversed(o.get("history", [])):
+            if h.get("event") == "status_change" and h.get("to") == "DISPATCH":
+                dispatched_at = _parse_ts(h.get("at"))
+                break
+        if dispatched_at is None:
+            dispatched_at = _parse_ts(o.get("updated_at")) or _parse_ts(o.get("created_at"))
+        if dispatched_at and dispatched_at <= cutoff:
+            o["status"] = "ARCHIVED"
+            o["archived_at"] = datetime.now(timezone.utc).isoformat()
+            to_archive.append(o)
+        else:
+            kept_orders.append(o)
+
+    if not to_archive:
+        return {"archived_orders": 0, "archived_comments": 0}
+
+    archived_ids = {o.get("id") for o in to_archive if o.get("id")}
+    kept_comments: list[dict] = []
+    to_archive_comments: list[dict] = []
+    for c in _comments:
+        if c.get("order_id") in archived_ids:
+            to_archive_comments.append(c)
+        else:
+            kept_comments.append(c)
+
+    _append_jsonl_bulk(_ARCHIVED_ORDERS_PATH, to_archive)
+    _append_jsonl_bulk(_ARCHIVED_COMMENTS_PATH, to_archive_comments)
+
+    _orders = kept_orders
+    _comments = kept_comments
+    _rewrite_jsonl(_ORDERS_PATH, _orders)
+    _rewrite_jsonl(_COMMENTS_PATH, _comments)
+
+    logger.info("Archived %d orders and %d comments (>= %s old)",
+                len(to_archive), len(to_archive_comments),
+                cutoff.isoformat())
+    return {
+        "archived_orders": len(to_archive),
+        "archived_comments": len(to_archive_comments),
+        "archived_order_ids": sorted(str(x) for x in archived_ids),
+    }
+
+
+async def archive_loop():
+    """Background coroutine that archives fulfilled orders once per day."""
+    while True:
+        try:
+            archive_fulfilled_orders()
+        except Exception:
+            logger.exception("archive_loop failed")
+        # Sleep until next midnight local time, then every 24h
+        try:
+            await asyncio.sleep(24 * 60 * 60)
+        except asyncio.CancelledError:
+            break
+
+
+async def start_archive_task():
+    """Launch the daily archive loop. Safe to call multiple times."""
+    try:
+        asyncio.create_task(archive_loop())
+        logger.info("Archive loop started (retention=%s days)", ARCHIVE_RETENTION_DAYS)
+    except Exception:
+        logger.exception("Could not start archive loop")
 
 # ── Filament inventory ────────────────────────────────────────────────────────
 

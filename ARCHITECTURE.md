@@ -12,8 +12,9 @@
 dash/
 ├── frontend/          ← React/Vite partner Kanban dashboard (Vercel)
 │   ├── src/
-│   │   ├── App.jsx          ← Login gate + root
-│   │   └── Dashboard.jsx    ← Kanban, analytics, printers, slicer, inventory
+│   │   ├── App.jsx          ← Login gate + root (JWT + legacy fallback)
+│   │   ├── Dashboard.jsx    ← Kanban (with search/filter), Messages panel, analytics, printers, slicer, inventory
+│   │   ├── auth.js          ← JWT login + global fetch interceptor (Bearer token on all /api/ calls)
 │   ├── vercel.json
 │   └── package.json
 │
@@ -22,7 +23,7 @@ dash/
 │   │   ├── main.py                    ← App init, CORS, route registration
 │   │   ├── api/v1/endpoints/
 │   │   │   ├── farm.py                ← Orders, messages, photos, errors, inventory
-│   │   │   ├── shopify.py             ← Webhook receiver + checkout creator
+│   │   │   ├── shopify.py             ← Webhook receiver + checkout creator + order timeline sync
 │   │   │   ├── printers.py            ← Printer CRUD + live poll
 │   │   │   ├── partners.py            ← Partner management
 │   │   │   ├── auth.py                ← Register/login (JWT stub — not yet wired to frontend)
@@ -50,11 +51,11 @@ dash/
 ├── customer/          ← Next.js customer storefront (Clerk auth)
 │   └── app/
 │       ├── page.tsx            ← Home + product catalog
-│       ├── layout.tsx         ← Root metadata, sitemap/robots routes
+│       ├── layout.tsx         ← Root metadata, JSON-LD LocalBusiness structured data
 │       ├── upload/page.tsx     ← STL upload → quote → Shopify checkout
 │       ├── account/            ← Order history, quotes
 │       ├── franchise/page.tsx  ← Franchise application page
-│       ├── products/page.tsx   ← Readymade product catalog
+│       ├── products/page.tsx   ← Readymade product catalog + JSON-LD Product structured data
 │       ├── api/products/route.ts ← Shopify GraphQL product feed
 │       ├── sitemap.xml/route.ts  ← SEO sitemap
 │       └── robots.txt/route.ts   ← SEO robots.txt
@@ -78,7 +79,7 @@ dash/
 | Service | Platform | URL / Location | Status |
 |---------|----------|----------------|--------|
 | Partner dashboard (printdash) | Vercel | `https://printdash-by3crk255-reventers-projects.vercel.app` (alias: `busienss.fofus.in`) | ✅ Live (2026-06-26) |
-| Backend API | Ubuntu server + Tailscale Funnel | `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net` (port 4322) | ✅ Live (2026-06-26) |
+| Backend API | Ubuntu server + Tailscale Funnel | `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net` (port 4322) | ✅ Live (2026-06-27, Shopify webhooks registered + HMAC verified) |
 | Shopify store | Shopify | `store.fofus.in` | ✅ Live |
 | n8n workflows | n8n Cloud | `gni123.app.n8n.cloud` | ✅ Live (Shopify cred pending) |
 | Slicer (OrcaSlicer CLI) | Hetzner CX32 VPS | Docker container | ✅ Live |
@@ -399,13 +400,21 @@ Roles:
 ### Backend (`/etc/printdash/env` or `/home/reventer/dash/backend/.env`)
 ```
 SHOPIFY_DOMAIN          store.fofus.in
-SHOPIFY_ADMIN_TOKEN     shpat_xxx...
-SHOPIFY_WEBHOOK_SECRET  whsec_xxx...
+SHOPIFY_ADMIN_TOKEN     shpat_xxx...      (required for Shopify push + checkout)
+SHOPIFY_WEBHOOK_SECRET  392f13...32a5     (set 2026-06-27; HMAC verify enabled)
 SHOPIFY_API_VERSION     2024-04
-MAKER_AI_DIR            /var/lib/printdash
-DATABASE_URL            postgresql+asyncpg://...  (when DB is added)
-SECRET_KEY              (JWT signing key, openssl rand -hex 32)
+MAKER_AI_DIR            /home/reventer/dash/data
+DATABASE_URL            sqlite+aiosqlite:///./makerai.db  (dev default)
+SECRET_KEY              dev-secret-change-in-production   (change for prod)
 ```
+
+**Live backend command:**
+```bash
+cd /home/reventer/dash/backend
+MAKER_AI_DIR=/home/reventer/dash/data ./.venv/bin/python3 -m uvicorn app.main:app --host 0.0.0.0 --port 4322
+```
+
+Tailscale Funnel is already on: `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net` → `127.0.0.1:4322`.
 
 ### Customer Portal (Next.js / Vercel)
 ```
@@ -489,7 +498,7 @@ TERRITORY_PINCODES      680121,680122,680123
 
 | Priority | Area | What's needed |
 |----------|------|---------------|
-| BLOCKING | Shopify webhooks | Manual registration in Shopify Admin |
+| ✅ DONE | Shopify webhooks | Registered orders/paid + orders/create; HMAC verified; live on Tailscale Funnel |
 | BLOCKING | PostgreSQL | Replace JSONL, SQLAlchemy models, Alembic |
 | HIGH | Role-based auth | JWT, admin vs partner login, data filtering |
 | HIGH | Admin message panel | Reply to partner messages, notification |

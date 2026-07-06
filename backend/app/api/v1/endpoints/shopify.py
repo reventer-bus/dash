@@ -203,3 +203,56 @@ async def _process_order(order: dict):
     }
 
     await farm_store.add_shopify_order(job)
+
+
+@router.get("/order-messages/{shopify_order_id}")
+async def sync_order_messages(shopify_order_id: str):
+    """Pull Shopify order timeline events and store them as comments.
+
+    This endpoint must be called explicitly (or polled by the dashboard) because
+    Shopify does not send timeline comments as webhooks. It requires
+    SHOPIFY_ADMIN_TOKEN to be configured.
+    """
+    if not SHOPIFY_TOKEN:
+        raise HTTPException(status_code=503, detail="Shopify Admin token not configured")
+
+    url = f"https://{SHOPIFY_DOMAIN}/admin/api/{SHOPIFY_API_VER}/orders/{shopify_order_id}/events.json"
+    async with httpx.AsyncClient() as client:
+        resp = await client.get(
+            url,
+            headers={"X-Shopify-Access-Token": SHOPIFY_TOKEN, "Content-Type": "application/json"},
+            timeout=15,
+        )
+    if resp.status_code != 200:
+        raise HTTPException(status_code=502, detail=f"Shopify error: {resp.text[:300]}")
+
+    events = resp.json().get("events", [])
+    from app.services import farm_store
+
+    order_id = f"shopify-{shopify_order_id}"
+    created = 0
+    for ev in events:
+        message = ev.get("message") or ev.get("description") or ev.get("verb")
+        if not message:
+            continue
+        author = ev.get("author", "Shopify")
+        ts = ev.get("created_at")
+        # Deduplicate by event id
+        ev_id = f"shopify-event-{ev.get('id')}"
+        existing = [c for c in farm_store._comments if c.get("id") == ev_id]
+        if existing:
+            continue
+        await farm_store.add_comment(
+            order_id,
+            {
+                "id": ev_id,
+                "text": message,
+                "author_name": author,
+                "author_role": "shopify",
+                "source": "shopify_timeline",
+                "created_at": ts,
+            },
+        )
+        created += 1
+
+    return {"order_id": order_id, "shopify_order_id": shopify_order_id, "events": len(events), "comments_created": created}

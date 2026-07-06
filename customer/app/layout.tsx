@@ -31,9 +31,41 @@ export const metadata: Metadata = {
 }
 
 export default function RootLayout({ children }: { children: React.ReactNode }) {
+  const jsonLd = {
+    '@context': 'https://schema.org',
+    '@type': 'LocalBusiness',
+    name: 'FOFUS',
+    description: 'India\'s franchise-powered 3D print network. Upload your design, get an instant INR quote, and receive a 3D-printed product at your door.',
+    url: 'https://fofus.in',
+    logo: 'https://fofus.in/logo.png',
+    image: 'https://fofus.in/og-image.png',
+    telephone: '+91-804-640',
+    address: {
+      '@type': 'PostalAddress',
+      streetAddress: 'Irinjalakuda, Thrissur',
+      addressLocality: 'Thrissur',
+      addressRegion: 'Kerala',
+      postalCode: '680121',
+      addressCountry: 'IN',
+    },
+    areaServed: 'India',
+    priceRange: '₹150 - ₹5000',
+    openingHours: 'Mo-Sa 09:00-18:00',
+    sameAs: [
+      'https://store.fofus.in',
+      'https://www.instagram.com/fofus.in',
+    ],
+  }
+
   return (
     <ClerkProvider>
       <html lang="en">
+        <head>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(jsonLd) }}
+          />
+        </head>
         <body>
           <Navbar />
           <main>{children}</main>

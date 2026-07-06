@@ -558,23 +558,72 @@ function KanbanCard({ job, stage, onMove, onCancel, onOpen }) {
       <ShopifyOrderDetails job={job} />
       {job.est_time_min && <div style={{ fontSize: 9, color: T?.textFaint ?? '#2a2a2a', fontFamily: 'monospace' }}>{job.est_time_min}min</div>}
       {job.assigned_printer && <div style={{ fontSize: 8, color: '#4a9eff', marginTop: 2 }}>⬡ {job.assigned_printer}</div>}
+
+      {/* Inline indicators: comments, errors, notes, partner */}
+      {(job.comments?.length || job.error_text || job.needs_redo || job.admin_notes || job.packing_notes || job.assigned_partner_name) && (
+        <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginTop: 6, paddingTop: 6, borderTop: `1px dashed ${T?.border ?? 'rgba(255,255,255,0.06)'}` }}>
+          {job.comments?.length > 0 && (
+            <span style={{ fontSize: 9, color: '#4a9eff' }}>💬 {job.comments.length}</span>
+          )}
+          {(job.error_text || job.needs_redo) && (
+            <span style={{ fontSize: 9, color: '#ff4444', fontWeight: 600 }}>⚠ {job.error_text ? 'Error' : 'Redo'}</span>
+          )}
+          {job.admin_notes && <span style={{ fontSize: 9, color: '#ff9800' }}>📝 Admin</span>}
+          {job.packing_notes && <span style={{ fontSize: 9, color: '#aa44ff' }}>📦 Pack</span>}
+          {job.assigned_partner_name && <span style={{ fontSize: 9, color: '#00cc66' }}>👤 {job.assigned_partner_name}</span>}
+        </div>
+      )}
+
+      {/* Inline chat preview on card face — shows every message with author, role, timestamp */}
+      {job.comments?.length > 0 && (
+        <div style={{
+          marginTop: 6, paddingTop: 6,
+          borderTop: `1px dashed ${T?.border ?? 'rgba(255,255,255,0.06)'}`,
+          display: 'flex', flexDirection: 'column', gap: 4,
+          maxHeight: 180, overflowY: 'auto',
+        }}>
+          {job.comments.map(c => {
+            const roleColor = c.author_role === 'admin' ? '#4a9eff' : c.author_role === 'customer' ? '#ff9800' : '#00cc66'
+            const ts = c.created_at ? new Date(c.created_at).toLocaleString(undefined, { month: 'short', day: 'numeric', hour: '2-digit', minute: '2-digit' }) : ''
+            return (
+              <div key={c.id} style={{ display: 'flex', flexDirection: 'column', gap: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 9 }}>
+                  <span style={{ color: roleColor, fontWeight: 600 }}>{c.author_name || 'Unknown'}</span>
+                  <span style={{ color: roleColor, opacity: 0.7, textTransform: 'uppercase', fontSize: 8 }}>{c.author_role}</span>
+                  <span style={{ color: T?.textFaint ?? '#555', marginLeft: 'auto', fontSize: 8 }}>{ts}</span>
+                </div>
+                <div style={{
+                  fontSize: 10, color: T?.text ?? '#ccc', background: T?.inputBg ?? '#0d0d0d',
+                  padding: '5px 8px', borderRadius: 5, border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+                  whiteSpace: 'pre-wrap', wordBreak: 'break-word'
+                }}>
+                  {c.text}
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
       <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
-        {ORDER_STAGES.indexOf(stage) > 0 && (
+        {stage !== 'DISPATCH' && ORDER_STAGES.indexOf(stage) > 0 && (
           <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) - 1])} style={{
             fontSize: 8, padding: '2px 6px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
             color: T?.textDim ?? '#444', cursor: 'pointer', borderRadius: 3
           }}>←</button>
         )}
-        {ORDER_STAGES.indexOf(stage) < ORDER_STAGES.length - 1 && (
+        {stage !== 'DISPATCH' && ORDER_STAGES.indexOf(stage) < ORDER_STAGES.length - 1 && (
           <button onClick={() => onMove(job.id || job.spec_id, ORDER_STAGES[ORDER_STAGES.indexOf(stage) + 1])} style={{
             fontSize: 8, padding: '2px 6px', background: '#00cc6610', border: '1px solid #00cc6620',
             color: '#00cc66', cursor: 'pointer', borderRadius: 3
           }}>→</button>
         )}
-        <button onClick={() => onCancel(job.id || job.spec_id)} style={{
-          fontSize: 8, padding: '2px 5px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
-          color: T?.textFaint ?? '#2a2a2a', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
-        }}>✕</button>
+        {stage !== 'DISPATCH' && (
+          <button onClick={() => onCancel(job.id || job.spec_id)} style={{
+            fontSize: 8, padding: '2px 5px', background: 'transparent', border: `1px solid ${T?.border ?? '#1a1a1a'}`,
+            color: T?.textFaint ?? '#2a2a2a', cursor: 'pointer', borderRadius: 3, marginLeft: 'auto'
+          }}>✕</button>
+        )}
       </div>
     </div>
   )
@@ -1563,6 +1612,15 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   // Server-side analytics payload from GET /api/v1/farm/analytics.
   // Fetched on tab open (or every 60s while the analytics tab is active).
   const [analyticsData, setAnalyticsData] = useState(null)
+  // Archived orders fetched from /api/v1/farm/archive
+  const [archive, setArchive] = useState({ orders: [], comments: [], count: 0 })
+
+  // Admin message overview (PLAN #4) — GET /api/v1/farm/comments/overview
+  const [messageOverview, setMessageOverview] = useState([])
+  // Kanban search/filter (PLAN #11)
+  const [searchQuery, setSearchQuery] = useState('')
+  const [filterPartner, setFilterPartner] = useState('')
+  const [filterStage, setFilterStage] = useState('')
 
   // Slicer state
   const [slicerFile, setSlicerFile] = useState(null)
@@ -1629,6 +1687,14 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
     if (fresh) setEnlargedOrder(fresh)
     const atts = await fetch(`${base}/api/v1/farm/orders/${id}/attachments`).then(r => r.json())
     setEnlargedAttachments(atts.attachments || [])
+    // Sync Shopify timeline comments for Shopify orders
+    if (fresh?.shopify_order_id) {
+      await fetch(`${base}/api/v1/shopify/order-messages/${fresh.shopify_order_id}`, { method: 'GET' }).catch(() => {})
+      // Re-fetch status after sync to get new comments
+      const status2 = await fetch(`${base}/api/v1/farm/status`).then(r => r.json())
+      const fresh2 = (status2.orders || []).find(o => o.id === id || o.spec_id === id)
+      if (fresh2) setEnlargedOrder(fresh2)
+    }
   }, [enlargedOrder])
 
   const triggerFileUpload = (kind) => {
@@ -1748,6 +1814,11 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
       const r = await fetch(`${base}/api/v1/farm/inventory`)
       if (r.ok) setInventory(await r.json())
     } catch { /* endpoint may not exist yet */ }
+
+    try {
+      const r = await fetch(`${base}/api/v1/farm/archive`)
+      if (r.ok) setArchive(await r.json())
+    } catch { /* endpoint may not exist yet */ }
   }, [])
 
   useEffect(() => {
@@ -1803,6 +1874,17 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
     poll()
   }
 
+  // Admin message overview (PLAN #4)
+  const fetchMessages = useCallback(async () => {
+    if (!adminMode) return
+    try {
+      const res = await fetch(`${apiUrlRef.current}/api/v1/farm/comments/overview`)
+      if (!res.ok) return
+      const body = await res.json()
+      setMessageOverview(body.orders || [])
+    } catch {}
+  }, [adminMode])
+
   // Partners management (admin only)
   const fetchPartners = useCallback(async () => {
     if (!adminMode) return
@@ -1849,6 +1931,9 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
 
   // Fetch partners whenever Partners tab is active (admin only)
   useEffect(() => {
+    if (tab === 'messages' && adminMode) {
+      fetchMessages()
+    }
     if (tab === 'partners' && adminMode) {
       fetchPartners()
       fetchPartnerWorkStats()
@@ -2014,6 +2099,7 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
 
   // All work orders (queue + orders combined, deduplicated by id)
   const allOrders = [...queue, ...orders.filter(o => !queue.find(q => (q.id || q.spec_id) === (o.id || o.spec_id)))]
+  const fulfilledOrders = allOrders.filter(o => o.status === 'DISPATCH')
   const activeOrders = allOrders.filter(o => o.status !== 'CANCELLED' && o.status !== 'DISPATCH' && o.status !== 'LOGGED')
 
   const alerts = [
@@ -2044,11 +2130,13 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   const ALL_TABS = [
     { id: 'overview',  label: 'Overview',  icon: '◉' },
     { id: 'kanban',    label: 'Kanban',    icon: '▦', badge: activeOrders.length || null },
+    { id: 'messages',  label: 'Messages',  icon: '✉', badge: messageOverview.length || null },
     { id: 'partners',  label: 'Partners',  icon: '◇', badge: adminMode && partnerList ? partnerList.length || null : null },
     { id: 'analytics', label: 'Analytics', icon: '◎' },
+    { id: 'archive',   label: 'Archive',   icon: '🗃', badge: archive.count || null },
   ]
   const TABS = partnerScopeOnly
-    ? ALL_TABS.filter(t => t.id !== 'partners')
+    ? ALL_TABS.filter(t => t.id !== 'partners' && t.id !== 'messages')
     : ALL_TABS
   // All shipped tabs are visible to all roles; safeTab is now a pass-through.
   const safeTab = tab
@@ -2076,10 +2164,24 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   })
   const maxMatCount = Math.max(1, ...Object.values(matBreakdown))
 
-  // Kanban: group allOrders by stage
+  // Kanban: group allOrders by stage — with search/filter (PLAN #11)
+  const filteredOrders = allOrders.filter(o => {
+    if (o.status === 'CANCELLED') return false
+    if (filterStage && o.status !== filterStage) return false
+    if (filterPartner && (o.assigned_partner || '') !== filterPartner) return false
+    if (searchQuery) {
+      const q = searchQuery.toLowerCase()
+      const haystack = [
+        o.id, o.spec_id, o.name, o.customer_name, o.customer_email,
+        o.shopify_order, o.material, o.assigned_partner_name,
+      ].filter(Boolean).join(' ').toLowerCase()
+      if (!haystack.includes(q)) return false
+    }
+    return true
+  })
   const kanbanByStage = {}
   ORDER_STAGES.forEach(s => { kanbanByStage[s] = [] })
-  allOrders.filter(o => o.status !== 'CANCELLED').forEach(o => {
+  filteredOrders.forEach(o => {
     const s = o.status
     if (kanbanByStage[s]) kanbanByStage[s].push(o)
   })
@@ -2218,8 +2320,46 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
       {safeTab === 'kanban' && (
         <div>
           <SectionHead>
-            Kanban Board — {activeOrders.length} active
+            Kanban Board — {filteredOrders.length} {filteredOrders.length !== allOrders.length ? `of ${allOrders.length}` : 'active'}
           </SectionHead>
+
+          {/* Search & Filter bar (PLAN #11) */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 12, flexWrap: 'wrap' }}>
+            <input
+              type="text"
+              placeholder="Search orders, customers, materials..."
+              value={searchQuery}
+              onChange={e => setSearchQuery(e.target.value)}
+              style={{
+                flex: 1, minWidth: 200, ...inputStyle(T),
+                padding: '6px 10px', fontSize: 11,
+              }}
+            />
+            <select
+              value={filterStage}
+              onChange={e => setFilterStage(e.target.value)}
+              style={{ ...selectStyle, width: 'auto', minWidth: 120 }}
+            >
+              <option value="">All Stages</option>
+              {ORDER_STAGES.map(s => <option key={s} value={s}>{s}</option>)}
+            </select>
+            <select
+              value={filterPartner}
+              onChange={e => setFilterPartner(e.target.value)}
+              style={{ ...selectStyle, width: 'auto', minWidth: 120 }}
+            >
+              <option value="">All Partners</option>
+              {[...new Set(allOrders.map(o => o.assigned_partner).filter(Boolean))].map(p => (
+                <option key={p} value={p}>{p}</option>
+              ))}
+            </select>
+            {(searchQuery || filterStage || filterPartner) && (
+              <button onClick={() => { setSearchQuery(''); setFilterStage(''); setFilterPartner('') }} style={{
+                padding: '6px 10px', fontSize: 10, cursor: 'pointer', borderRadius: 4,
+                background: 'transparent', border: `1px solid ${T.border}`, color: T.textDim,
+              }}>Clear</button>
+            )}
+          </div>
 
           {/* Kanban columns */}
           <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 12 }}>
@@ -2236,8 +2376,75 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
             ))}
           </div>
 
+          {/* Fulfilled orders stay visible on the board for 14 days after DISPATCH */}
+          {fulfilledOrders.length > 0 && (
+            <div style={{ marginTop: 14 }}>
+              <SectionHead>Fulfilled (14-day visibility) — {fulfilledOrders.length}</SectionHead>
+              <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 12 }}>
+                {fulfilledOrders.map(job => (
+                  <KanbanCard
+                    key={job.id || job.spec_id}
+                    job={job}
+                    stage={job.status}
+                    onMove={() => {}}
+                    onCancel={() => {}}
+                    onOpen={openEnlarged}
+                  />
+                ))}
+              </div>
+            </div>
+          )}
+
           <div style={{ marginTop: 8, fontSize: 8, color: T.textFaint }}>
             Drag cards between columns to advance stages · Click → or ← buttons on each card
+          </div>
+        </div>
+      )}
+
+      {/* ── MESSAGES (Admin Message Panel — PLAN #4) ─────────────────────────── */}
+      {safeTab === 'messages' && adminMode && (
+        <div style={{ maxWidth: 900 }}>
+          <SectionHead>Message Overview — {messageOverview.length} order{messageOverview.length !== 1 ? 's' : ''} with comments</SectionHead>
+          {messageOverview.length === 0
+            ? <EmptyState icon="✉" title="No messages yet" hint="Partner comments on orders will appear here for admin review." />
+            : <div style={{ display: 'grid', gap: 8 }}>
+                {messageOverview.map(item => {
+                  const oid = item.order_id || item.id || '?'
+                  const latest = item.latest_comment || {}
+                  const unread = item.unread_count || 0
+                  return (
+                    <div key={oid} style={{
+                      background: T.card, border: `1px solid ${T.border}`,
+                      borderRadius: 7, padding: '10px 14px', cursor: 'pointer',
+                      display: 'flex', alignItems: 'center', gap: 12,
+                    }} onClick={() => { setTab('kanban') }}>
+                      <div style={{
+                        width: 36, height: 36, borderRadius: '50%', flexShrink: 0,
+                        background: unread > 0 ? '#ff9800' : '#4a9eff',
+                        color: '#fff', display: 'flex', alignItems: 'center', justifyContent: 'center',
+                        fontSize: 14, fontWeight: 700,
+                      }}>{(item.order_name || oid)[0]?.toUpperCase() || '?'}</div>
+                      <div style={{ flex: 1, minWidth: 0 }}>
+                        <div style={{ fontSize: 12, fontWeight: 600, color: T.text }}>
+                          {item.order_name || oid}
+                          {item.assigned_partner_name && <span style={{ fontSize: 10, color: T.textDim, marginLeft: 8 }}>→ {item.assigned_partner_name}</span>}
+                        </div>
+                        <div style={{ fontSize: 10, color: T.textDim, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+                          {latest.text || 'No message text'}
+                        </div>
+                      </div>
+                      <div style={{ display: 'flex', gap: 6, flexShrink: 0, alignItems: 'center' }}>
+                        {unread > 0 && <Tag color="#ff9800" bg="#ff980015">{unread} unread</Tag>}
+                        <Tag color="#888">{item.comment_count || 0} total</Tag>
+                        {latest.created_at && <span style={{ fontSize: 9, color: T.textFaint }}>{new Date(latest.created_at).toLocaleDateString()}</span>}
+                      </div>
+                    </div>
+                  )
+                })}
+              </div>
+          }
+          <div style={{ marginTop: 8, fontSize: 8, color: T.textFaint }}>
+            Click an order to jump to the Kanban board · POST /api/v1/farm/orders/&#123;id&#125;/comments to reply
           </div>
         </div>
       )}
@@ -2566,6 +2773,37 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
         analyticsData == null
           ? <div style={{ padding: 20, color: T.textDim, fontSize: 11 }}>Loading farm analytics…</div>
           : <AnalyticsPanel data={analyticsData} T={T} />
+      )}
+
+      {/* ── ARCHIVE ───────────────────────────────────────────────────────────── */}
+      {safeTab === 'archive' && (
+        <div>
+          <SectionHead>Archived Orders — {archive.count} record{archive.count !== 1 ? 's' : ''}</SectionHead>
+          {archive.count === 0 ? (
+            <EmptyState icon="🗃" title="No archived orders yet" hint="Fulfilled orders older than 14 days appear here." />
+          ) : (
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill, minmax(260px, 1fr))', gap: 10 }}>
+              {(archive.orders || []).map(o => (
+                <div key={o.id} onClick={() => openEnlarged({ ...o, comments: (archive.comments || []).filter(c => c.order_id === o.id) })} style={{
+                  background: T.card, border: `1px solid ${T.border}`, borderRadius: 7,
+                  padding: '10px 12px', cursor: 'pointer'
+                }}>
+                  <div style={{ fontSize: 10, color: T.text, fontWeight: 600, fontFamily: 'monospace', marginBottom: 4 }}>{o.name || o.id}</div>
+                  <div style={{ display: 'flex', gap: 4, flexWrap: 'wrap', marginBottom: 6 }}>
+                    <Tag color={ORDER_COLOR[o.status] || '#555'}>{o.status}</Tag>
+                    <Tag color={MAT_COLOR[o.material] || '#555'}>{o.material || 'PLA'}</Tag>
+                  </div>
+                  <div style={{ fontSize: 8, color: T.textDim }}>
+                    archived {(o.archived_at || '').slice(0, 16).replace('T', ' ')}
+                  </div>
+                  <div style={{ fontSize: 8, color: T.textFaint, marginTop: 2 }}>
+                    {(archive.comments || []).filter(c => c.order_id === o.id).length} comments preserved
+                  </div>
+                </div>
+              ))}
+            </div>
+          )}
+        </div>
       )}
 
       {/* ── INVENTORY ────────────────────────────────────────────────────────── */}

@@ -85,6 +85,16 @@ async def farm_queue(user: Optional[User] = Depends(get_optional_user)):
     return farm_store.get_queue(partner_id=_partner_scope(user))
 
 
+@router.get("/archive")
+async def farm_archive():
+    """Return all orders (and their comments) older than the retention period.
+
+    These orders were fulfilled (DISPATCH) and then moved to the archive
+    files. The frontend uses this for an "Archive" view.
+    """
+    return farm_store.get_archive()
+
+
 # ── Work orders ───────────────────────────────────────────────────────────────
 
 class OrderPayload(BaseModel):

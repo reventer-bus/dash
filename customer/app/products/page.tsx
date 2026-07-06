@@ -40,8 +40,32 @@ const CATEGORIES = ['Gifts', 'Home decor', 'Fashion accessories', 'Home essentia
 export default async function ProductsPage() {
   const products = await getProducts()
 
+  // JSON-LD structured data for products (PLAN #9 — SEO)
+  const productJsonLd = products.map(p => ({
+    '@context': 'https://schema.org',
+    '@type': 'Product',
+    name: p.title,
+    image: p.featuredImage?.url ? [p.featuredImage.url] : undefined,
+    description: `${p.title} — 3D printed by FOFUS franchise partners in India`,
+    brand: { '@type': 'Brand', name: p.vendor || 'FOFUS' },
+    category: p.productType,
+    offers: {
+      '@type': 'Offer',
+      price: parseFloat(p.priceRangeV2.minVariantPrice.amount).toFixed(2),
+      priceCurrency: p.priceRangeV2.minVariantPrice.currencyCode || 'INR',
+      availability: 'https://schema.org/InStock',
+      url: `https://store.fofus.in/products/${p.handle}`,
+    },
+  }))
+
   return (
     <div className="pt-14 min-h-screen bg-gray-50">
+      {productJsonLd.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productJsonLd) }}
+        />
+      )}
       <div className="max-w-6xl mx-auto px-4 py-12">
         <div className="flex items-end justify-between mb-10">
           <div>

@@ -1,15 +1,23 @@
 [Unit]
-Description=printdash FastAPI backend
-After=network.target
+Description=printdash FastAPI backend (Tailscale Funnel)
+After=network-online.target tailscaled.service
+Wants=network-online.target tailscaled.service
 
 [Service]
 Type=simple
-User=printdash
-WorkingDirectory=/opt/printdash-backend/backend
-EnvironmentFile=/etc/printdash/env
-ExecStart=/opt/printdash-backend/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 8000
+User=reventer
+Group=reventer
+WorkingDirectory=/home/reventer/dash/backend
+EnvironmentFile=/home/reventer/dash/backend/.env
+Environment="PATH=/home/reventer/dash/backend/.venv/bin:/usr/local/sbin:/usr/local/bin:/usr/sbin:/usr/bin:/sbin:/bin"
+Environment="MAKER_AI_DIR=/home/reventer/dash/data"
+ExecStart=/home/reventer/dash/backend/.venv/bin/uvicorn app.main:app --host 0.0.0.0 --port 4322
+ExecStartPost=/bin/bash -c 'sleep 5 && /usr/bin/tailscale funnel --bg 4322'
+ExecStopPost=-/usr/bin/tailscale funnel reset
 Restart=on-failure
 RestartSec=5
+StartLimitInterval=60s
+StartLimitBurst=3
 
 [Install]
 WantedBy=multi-user.target

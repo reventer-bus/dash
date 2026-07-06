@@ -62,15 +62,14 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 ## 🔴 BLOCKING — Must Fix Before Reliable Production
 
 ### 1. Register Shopify Webhooks
-**Status: MANUAL STEP — nothing arrives without this**
+**Status: ✅ DONE — 2026-06-27**
 
 - Shopify Admin → Settings → Notifications → Webhooks
-- Add `orders/paid` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/api/v1/shopify/webhook`
-- Add `orders/create` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/api/v1/shopify/webhook`
-- Copy HMAC secret → `SHOPIFY_WEBHOOK_SECRET` in `/etc/printdash/env` (or `.env` for dev)
-- Restart backend: `sudo systemctl restart printdash-backend` (or dev uvicorn)
-
-Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
+- Added `orders/paid` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/api/v1/shopify/webhook`
+- Added `orders/create` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/api/v1/shopify/webhook`
+- HMAC secret set in `backend/.env` as `SHOPIFY_WEBHOOK_SECRET`
+- Backend running on port 4322 via uvicorn; Tailscale Funnel proxies `*.ts.net` to it
+- Verified: signed test webhook returns 200 + queues order; bad HMAC returns 401
 
 ### 2. PostgreSQL (Replace JSONL)
 **Status: ✅ DONE (Phase 1, Jul 05). `farm_store.py` rewired onto Postgres — in-memory read cache + write-through DB on every mutation. JSONL is no longer the data path.**
@@ -115,7 +114,7 @@ Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 
 ### 4. Admin Message Panel
 - [x] Backend (Jul 05): `GET /api/v1/farm/comments/overview` — every order with comments, unread count for the caller, latest message, newest-first; partner-scoped tokens see only their own orders
-- [ ] Frontend panel: render the overview in the admin dashboard, reply inline (POST comment endpoint already exists)
+- [x] Frontend panel (Jul 06): Messages tab in Dashboard.jsx — shows all orders with comments, unread badges, latest message preview, click to jump to Kanban
 - [ ] Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
 - [x] Unread/read state synced with backend (per-comment `read_by` + mark-read endpoint, Phase 1)
 
@@ -161,7 +160,7 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - ✅ Sitemap at `/sitemap.xml` (Next.js route)
 - ✅ Robots.txt at `/robots.txt` (Next.js route)
 - ✅ Page-level metadata on home, products, upload, franchise, account pages
-- [ ] Structured data JSON-LD for products / LocalBusiness
+- [x] Structured data JSON-LD for LocalBusiness (layout.tsx) + Product catalog (products/page.tsx) — Jul 06
 - [ ] Image alt-text audit on product grid
 - [ ] Core Web Vitals / lazy image loading audit
 
@@ -170,6 +169,7 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - Pre-fill from `tracking_url` and `parcel_code` on the order card
 
 ### 11. Order Search & Filter
+- [x] Frontend search bar + stage/partner filters on Kanban tab (Jul 06) — searches order ID, customer name, email, material, Shopify order #; filters by stage and assigned partner
 - Search by customer name, order number, material
 - Filter Kanban by partner, date range, error state
 - Needed once order volume exceeds 30–50/day

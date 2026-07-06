@@ -115,7 +115,7 @@ Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 
 ### 4. Admin Message Panel
 - [x] Backend (Jul 05): `GET /api/v1/farm/comments/overview` — every order with comments, unread count for the caller, latest message, newest-first; partner-scoped tokens see only their own orders
-- [ ] Frontend panel: render the overview in the admin dashboard, reply inline (POST comment endpoint already exists)
+- [x] Frontend panel (Jul 05): Messages tab in the dashboard — thread list with unread badges (tab badge shows total unread, polled 60s), expand a row to read + reply inline (reuses CommentThread), opening a thread marks it read for JWT users. Partners see the same tab scoped to their own orders.
 - [ ] Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
 - [x] Unread/read state synced with backend (per-comment `read_by` + mark-read endpoint, Phase 1)
 

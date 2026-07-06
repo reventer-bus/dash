@@ -1563,6 +1563,10 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   // Server-side analytics payload from GET /api/v1/farm/analytics.
   // Fetched on tab open (or every 60s while the analytics tab is active).
   const [analyticsData, setAnalyticsData] = useState(null)
+  // Messages tab: GET /api/v1/farm/comments/overview (PLAN #4 admin panel).
+  // Fetched on mount + every 60s so the tab badge shows unread without opening it.
+  const [msgOverview, setMsgOverview] = useState(null)
+  const [openThreadOrder, setOpenThreadOrder] = useState(null)
 
   // Slicer state
   const [slicerFile, setSlicerFile] = useState(null)
@@ -1933,6 +1937,37 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
     return u?.name || partnerId
   }
 
+  const fetchMsgOverview = useCallback(async () => {
+    try {
+      const r = await fetch(`${apiUrlRef.current}/api/v1/farm/comments/overview`)
+      if (r.ok) setMsgOverview(await r.json())
+    } catch (_) {}
+  }, [])
+
+  useEffect(() => {
+    fetchMsgOverview()
+    const handle = setInterval(fetchMsgOverview, 60000)
+    return () => clearInterval(handle)
+  }, [fetchMsgOverview])
+
+  // Opening a thread marks its comments read (JWT only — the backend read
+  // endpoint needs a user identity; the legacy gate just clears on reply).
+  const openThread = async (orderId) => {
+    const next = openThreadOrder === orderId ? null : orderId
+    setOpenThreadOrder(next)
+    if (!next || !localStorage.getItem('pd_token')) return
+    try {
+      const r = await fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}/comments`)
+      if (!r.ok) return
+      const myId = authUser?.partner_id || authUser?.email
+      const unread = ((await r.json()).comments || []).filter(c => !(c.read_by || []).includes(myId))
+      await Promise.all(unread.map(c =>
+        fetch(`${apiUrlRef.current}/api/v1/farm/orders/${orderId}/comments/${c.id}/read`, { method: 'POST' })
+      ))
+      fetchMsgOverview()
+    } catch (_) {}
+  }
+
   // Fetch server-side analytics whenever Analytics tab is active.
   // Also re-fetches every 60s while the tab stays open so the numbers
   // don't go stale during a long session.
@@ -2044,6 +2079,7 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   const ALL_TABS = [
     { id: 'overview',  label: 'Overview',  icon: '◉' },
     { id: 'kanban',    label: 'Kanban',    icon: '▦', badge: activeOrders.length || null },
+    { id: 'messages',  label: 'Messages',  icon: '◈', badge: msgOverview?.total_unread || null },
     { id: 'partners',  label: 'Partners',  icon: '◇', badge: adminMode && partnerList ? partnerList.length || null : null },
     { id: 'analytics', label: 'Analytics', icon: '◎' },
   ]
@@ -2566,6 +2602,76 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
         analyticsData == null
           ? <div style={{ padding: 20, color: T.textDim, fontSize: 11 }}>Loading farm analytics…</div>
           : <AnalyticsPanel data={analyticsData} T={T} />
+      )}
+
+      {/* ── MESSAGES — all order threads in one place (PLAN #4) ─────────────── */}
+      {safeTab === 'messages' && (
+        <div style={{ maxWidth: 720 }}>
+          <SectionHead action={
+            <span style={{ fontSize: 9, color: T.textFaint }}>
+              {msgOverview ? `${msgOverview.total_unread} unread · ${msgOverview.count} thread${msgOverview.count !== 1 ? 's' : ''}` : ''}
+            </span>
+          }>
+            Messages
+          </SectionHead>
+          {msgOverview == null
+            ? <div style={{ padding: 20, color: T.textDim, fontSize: 11 }}>Loading messages…</div>
+            : msgOverview.orders.length === 0
+              ? <EmptyState icon="◈" title="No messages yet" hint="Order comment threads appear here as soon as anyone writes one." />
+              : <div style={{ display: 'grid', gap: 8 }}>
+                  {msgOverview.orders.map(row => {
+                    const open = openThreadOrder === row.order_id
+                    return (
+                      <div key={row.order_id} style={{
+                        background: T.card, border: `1px solid ${row.unread > 0 ? '#00cc6640' : T.border}`,
+                        borderRadius: 8, overflow: 'hidden',
+                      }}>
+                        <div
+                          onClick={() => openThread(row.order_id)}
+                          style={{
+                            padding: '10px 14px', cursor: 'pointer',
+                            display: 'flex', alignItems: 'center', gap: 10,
+                          }}
+                        >
+                          <div style={{ flex: 1, minWidth: 0 }}>
+                            <div style={{
+                              fontSize: 12, fontWeight: 600, color: T.text,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              {row.order_name || row.order_id}
+                            </div>
+                            <div style={{
+                              fontSize: 10, color: T.textDim, marginTop: 2,
+                              whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis',
+                            }}>
+                              <span style={{ color: row.latest?.author_role === 'admin' || row.latest?.author_role === 'super_admin' ? '#4a9eff' : '#00cc66' }}>
+                                {row.latest?.author_name || '—'}
+                              </span>
+                              {': '}{row.latest?.text || ''}
+                            </div>
+                          </div>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexShrink: 0 }}>
+                            {row.order_status && <Tag color="#888">{row.order_status}</Tag>}
+                            {row.assigned_partner && <Tag color="#4a9eff">{row.assigned_partner}</Tag>}
+                            {row.unread > 0 && (
+                              <span style={{
+                                background: '#00cc66', color: '#000', borderRadius: 9,
+                                fontSize: 9, fontWeight: 800, padding: '2px 7px',
+                              }}>{row.unread}</span>
+                            )}
+                            <span style={{ fontSize: 9, color: T.textFaint }}>{open ? '▲' : '▼'}</span>
+                          </div>
+                        </div>
+                        {open && (
+                          <div style={{ padding: '0 14px 12px', borderTop: `1px solid ${T.border}` }}>
+                            <CommentThread orderId={row.order_id} apiUrl={apiUrlRef.current} authUser={authUser} />
+                          </div>
+                        )}
+                      </div>
+                    )
+                  })}
+                </div>}
+        </div>
       )}
 
       {/* ── INVENTORY ────────────────────────────────────────────────────────── */}

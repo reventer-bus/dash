@@ -185,6 +185,88 @@ async def main():
             r = await c.get("/api/v1/auth/me", headers={"Authorization": "Bearer garbage"})
             check("bad token → 401", r.status_code == 401)
 
+            # ── 4b. Admin message panel: comments overview ──
+            r = await c.get("/api/v1/farm/comments/overview", headers=A)
+            ov = r.json()
+            check("comments overview aggregates", ov["count"] >= 1 and ov["total_unread"] >= 1, r.text)
+            r = await c.get("/api/v1/farm/comments/overview", headers=P)
+            check("comments overview partner-scoped",
+                  all(row.get("assigned_partner") == "101" for row in r.json()["orders"]), r.text)
+
+            # ── 4c. Masked chat relay (PLAN #21) ──
+            from app.core.config import settings as _settings
+            from app.services import pii as _pii
+            r = await c.post("/api/v1/chat/threads", json={
+                "order_id": "shopify-111", "customer_wa_id": "wa-9999"})
+            check("chat: no auth → 401", r.status_code == 401, str(r.status_code))
+            r = await c.post("/api/v1/chat/threads", headers=A, json={
+                "order_id": "shopify-111", "customer_wa_id": "wa-9999"})
+            check("chat: disabled → 503", r.status_code == 503, str(r.status_code))
+
+            _settings.CHAT_RELAY_ENABLED = True
+            _settings.CHAT_RELAY_API_KEY = "test-relay-key"
+            RK = {"X-Relay-Key": "test-relay-key"}
+            r = await c.post("/api/v1/chat/threads", headers=RK, json={
+                "order_id": "shopify-111", "customer_wa_id": "wa-9999"})
+            check("chat: relay key creates thread", r.status_code == 201, r.text)
+            thr = r.json()["id"]
+            r = await c.post("/api/v1/chat/threads", headers=RK, json={
+                "order_id": "shopify-111", "customer_wa_id": "wa-9999"})
+            check("chat: thread create idempotent", r.json()["id"] == thr, r.text)
+
+            r = await c.post(f"/api/v1/chat/threads/{thr}/messages", headers=RK, json={
+                "direction": "customer_to_tech", "text": "call me on 9895854640 ok?"})
+            b = r.json()
+            check("chat: phone masked + relayed",
+                  b["relay"] is True and "[redacted]" in b["masked_text"]
+                  and "9895854640" not in b["masked_text"] and "phone" in b["pii_types"], r.text)
+
+            # Regex-clean + no ANTHROPIC_API_KEY → fail closed (withheld)
+            r = await c.post(f"/api/v1/chat/threads/{thr}/messages", headers=RK, json={
+                "direction": "customer_to_tech", "text": "lets talk outside this app"})
+            b = r.json()
+            check("chat: unverifiable message withheld (fail-closed)",
+                  b["relay"] is False and "withheld" in b["masked_text"], r.text)
+
+            # LLM classifier verdicts (patched — no real API in tests)
+            async def _fake_clean(text, key, model=None):
+                return {"llm_checked": True, "llm_flag": False}
+            async def _fake_flagged(text, key, model=None):
+                return {"llm_checked": True, "llm_flag": True}
+            _orig_llm = _pii.llm_second_pass
+            _pii.llm_second_pass = _fake_clean
+            r = await c.post(f"/api/v1/chat/threads/{thr}/messages", headers=RK, json={
+                "direction": "tech_to_customer", "text": "print finished, packing now"})
+            check("chat: LLM-clean message relayed verbatim",
+                  r.json()["relay"] is True and r.json()["masked_text"] == "print finished, packing now", r.text)
+            _pii.llm_second_pass = _fake_flagged
+            r = await c.post(f"/api/v1/chat/threads/{thr}/messages", headers=RK, json={
+                "direction": "customer_to_tech", "text": "you know where to find me"})
+            check("chat: LLM-flagged solicitation blocked",
+                  r.json()["relay"] is False and "not allowed" in r.json()["masked_text"], r.text)
+            _pii.llm_second_pass = _orig_llm
+
+            r = await c.get(f"/api/v1/chat/threads/{thr}/messages", headers=RK)
+            msgs = r.json()["messages"]
+            check("chat: relay read has no raw_text",
+                  len(msgs) == 4 and all("raw_text" not in m for m in msgs), r.text)
+            r = await c.get(f"/api/v1/chat/threads/{thr}/messages", headers=A)
+            msgs = r.json()["messages"]
+            check("chat: super_admin read includes raw_text",
+                  all("raw_text" in m for m in msgs)
+                  and msgs[0]["raw_text"] == "call me on 9895854640 ok?", r.text)
+            r = await c.get(f"/api/v1/chat/threads/{thr}/messages", headers=P)
+            check("chat: partner token → 403", r.status_code == 403, str(r.status_code))
+
+            from sqlalchemy import select as _select, func as _func
+            from app.core.database import session_scope as _scope
+            from app.models.chat import PiiBlockAudit as _PBA
+            async with _scope() as s:
+                n_audit = (await s.execute(_select(_func.count()).select_from(_PBA))).scalar_one()
+            check("chat: pii_block_audit rows written", n_audit >= 3, str(n_audit))
+            _settings.CHAT_RELAY_ENABLED = False
+            _settings.CHAT_RELAY_API_KEY = ""
+
             # cleanup-test-data admin gate
             r = await c.post("/api/v1/farm/admin/cleanup-test-data?dry_run=true", headers=P)
             check("cleanup-test-data partner → 403", r.status_code == 403, r.text)

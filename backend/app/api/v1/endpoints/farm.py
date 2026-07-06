@@ -1022,6 +1022,26 @@ async def unread_count(
     return {"ok": True, "order_id": order_id, "unread": count}
 
 
+@router.get("/comments/overview")
+async def comments_overview(user: Optional[User] = Depends(get_optional_user)):
+    """Admin message panel (PLAN #4): every order with comments, unread
+    count for the caller, and the latest message — one call instead of
+    polling per-order unread counts.
+
+    Partner-scoped tokens get only their own orders' threads.
+    """
+    user_id = (user.partner_id or user.email) if user else "admin"
+    rows = farm_store.comments_overview(user_id)
+    pid = _partner_scope(user)
+    if pid is not None:
+        rows = [r for r in rows if r.get("assigned_partner") == pid]
+    return {
+        "orders": rows,
+        "total_unread": sum(r["unread"] for r in rows),
+        "count": len(rows),
+    }
+
+
 # ── Admin: cleanup test data ───────────────────────────────────────────────
 
 # Known smoke-test order IDs from earlier sessions. Hardcoded because they

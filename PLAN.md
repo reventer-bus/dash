@@ -102,21 +102,22 @@ Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 
 - [x] `chat_threads`, `chat_messages`, `pii_block_audit` tables (migration 0001)
 - [x] `pipeline/pii_mask.py` — regex layer: Indian phone (digit + spelled-out), email, UPI handles, social handles
-- [ ] **LLM second pass — NOT built.** Regex misses paraphrased contact requests ("call me, number ending 4640") and non-Indian formats. Do not treat this as leak-proof without it.
-- [ ] **Image/voice note handling — NOT built.** A phone number written on paper and photographed, or read aloud in a voice note, passes straight through untouched. OCR + speech-to-text pre-processing required before the text mask ever runs.
-- [ ] n8n workflow wiring: AiSensy webhook → `pii_mask.py` logic (paste into Function node) → Google Chat space per job, and reverse path
-- [ ] Masking must run server-side in n8n (Hetzner) — explicitly NOT in the local Hermes/OpenClaw PC agent, which is a single point of failure and out of the trust boundary for anything customer-facing
-- [ ] Decide retention policy on `raw_text` — currently kept for abuse investigation, readable only by `super_admin` at the app layer (not yet enforced in code — add to `require_role` on whatever endpoint reads it)
+- [x] **Relay API built (Jul 05)** — `/api/v1/chat/*` (threads + messages). The backend is now the masking authority and system of record: n8n POSTs each message and relays only what the response says (`relay` + `masked_text`), never the original. Auth: `X-Relay-Key` shared secret (set `CHAT_RELAY_API_KEY`) or super_admin JWT. **Ships dark**: `CHAT_RELAY_ENABLED=false` → POST endpoints 503 until the checklist below is done.
+- [x] **LLM second pass built** — `llm_second_pass()` in pii_mask.py, strict Claude classifier (needs `ANTHROPIC_API_KEY`, model via `PII_LLM_MODEL`). Runs on every regex-clean message. **Fail-closed**: if the classifier flags the message, can't run, or answers ambiguously, the message is withheld — never relayed unverified.
+- [x] `raw_text` access enforced in code: message reads return masked text only; `raw_text` appears only for a super_admin JWT (audit categories in `pii_block_audit`, never raw matches)
+- [ ] **Image/voice note handling — NOT built.** A phone number written on paper and photographed, or read aloud in a voice note, has no text for the mask to see. n8n must BLOCK media messages outright until OCR + speech-to-text pre-processing exists. This is the reason `CHAT_RELAY_ENABLED` stays false.
+- [ ] n8n workflow wiring: AiSensy webhook → `POST /api/v1/chat/threads/{id}/messages` (with X-Relay-Key) → relay `masked_text` to Google Chat space per job, and reverse path. Media messages: reject with a canned reply.
+- [ ] Masking runs server-side (backend/n8n) — explicitly NOT in the local Hermes/OpenClaw PC agent, which is a single point of failure and out of the trust boundary for anything customer-facing
 
 
 
 ## 🟡 HIGH — Core Product Completeness
 
 ### 4. Admin Message Panel
-- View all unread partner messages across all orders in one place
-- Reply from admin dashboard
-- Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
-- Unread/read state synced with backend
+- [x] Backend (Jul 05): `GET /api/v1/farm/comments/overview` — every order with comments, unread count for the caller, latest message, newest-first; partner-scoped tokens see only their own orders
+- [ ] Frontend panel: render the overview in the admin dashboard, reply inline (POST comment endpoint already exists)
+- [ ] Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
+- [x] Unread/read state synced with backend (per-comment `read_by` + mark-read endpoint, Phase 1)
 
 ### 5. Photo Storage — Cloudflare R2
 - Current: base64 in JSONL bloats file size (~100KB per photo)

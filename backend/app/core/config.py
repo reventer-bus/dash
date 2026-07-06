@@ -23,6 +23,17 @@ class Settings(BaseSettings):
 
     ENVIRONMENT: str = "development"
 
+    # Masked customer<->technician chat relay (PLAN.md #21)
+    # Disabled by default: image/voice PII handling is not built yet, so the
+    # relay must not be customer-facing. Flip only per the PLAN #21 checklist.
+    CHAT_RELAY_ENABLED: bool = False
+    # Shared secret for n8n -> relay endpoints (X-Relay-Key header).
+    CHAT_RELAY_API_KEY: str = ""
+    # Claude API key for the PII second-pass classifier. Without it,
+    # regex-clean messages are withheld (fail-closed), not relayed.
+    ANTHROPIC_API_KEY: str = ""
+    PII_LLM_MODEL: str = "claude-haiku-4-5-20251001"
+
     # Shopify integration
     SHOPIFY_DOMAIN: str = Field(default="store.fofus.in")
     SHOPIFY_ADMIN_TOKEN: str = Field(default="")

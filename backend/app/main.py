@@ -2,7 +2,7 @@ from contextlib import asynccontextmanager
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
-from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify, admin_users
+from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify, admin_users, chat
 from app.services import farm_store
 
 
@@ -47,6 +47,7 @@ app.include_router(ai.router, prefix="/api/v1/ai", tags=["ai-v1"])
 # Core resource endpoints
 app.include_router(auth.router, prefix="/api/v1/auth", tags=["auth"])
 app.include_router(admin_users.router, prefix="/api/v1/admin", tags=["admin"])
+app.include_router(chat.router, prefix="/api/v1/chat", tags=["chat-relay"])
 app.include_router(printers.router, prefix="/api/v1/printers", tags=["printers"])
 app.include_router(orders.router, prefix="/api/v1/orders", tags=["orders"])
 app.include_router(files.router, prefix="/api/v1/files", tags=["files"])

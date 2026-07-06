@@ -2,11 +2,12 @@
 PII masking for the customer <-> technician chat relay.
 
 Regex layer catches the common cases. It will NOT catch: images containing
-phone numbers, voice notes, or creative spelled-out numbers ("nine eight nine
-five..."). Those need an LLM second pass (see mask_with_llm_fallback) and,
-for images, OCR before this function ever runs. Treat this as layer 1 of 2 —
-ship it, but do not consider the relay "safe" until the LLM pass and image/OCR
-handling are also live. See ARCHITECTURE.md risk register.
+phone numbers, voice notes, or paraphrased solicitation ("call me, number
+ending 4640"). Layer 2 is `llm_second_pass()` below — a strict Claude
+classifier run on regex-clean messages (fail-closed: unverifiable messages
+are withheld by the relay endpoint). Images/voice still need OCR/STT before
+any text layer runs — NOT built; keep media messages blocked in n8n until
+it is. See ARCHITECTURE.md risk register.
 
 Usage in n8n: paste the body of `mask_message()` into a Function node, or
 call this module directly if the relay becomes its own microservice.
@@ -70,12 +71,58 @@ def mask_message(text: str) -> dict:
 
 # ── LLM fallback (second pass) ──────────────────────────────────────────────
 # Regex misses paraphrased contact requests ("just call me on my number ending
-# 4640") and non-Indian formats. Route flagged-clean messages through an LLM
-# classifier before final relay if the order value / risk profile warrants it.
-# NOT implemented here — wire this as a second n8n node calling Claude API
-# with a strict "does this message contain or solicit contact information?
-# reply ONLY yes/no" prompt. Do not skip this for Phase 1 sign-off; regex
-# alone is not sufficient for the "never leak it anybody" requirement.
+# 4640") and non-Indian formats. Messages the regex layer finds CLEAN go
+# through this classifier before relay. Fail-closed: if the API call errors,
+# the caller treats the message as unverified and withholds it.
+
+_LLM_PROMPT = (
+    "You are a strict content filter for a marketplace chat where the two "
+    "parties must never exchange contact information. Does the following "
+    "message contain OR solicit contact information in any form — phone "
+    "number (digits, spelled out, partial, 'number ending in...'), email, "
+    "social media handle or profile, messaging app reference (WhatsApp, "
+    "Telegram, Signal), payment handle (UPI/PayPal), or a physical address? "
+    "Asking to 'talk outside', 'call me', or 'find me on' counts as "
+    "soliciting. Reply with exactly one word: YES or NO.\n\nMessage:\n"
+)
+
+
+async def llm_second_pass(text: str, api_key: str, model: str = "claude-haiku-4-5-20251001") -> dict:
+    """Classify a regex-clean message with Claude. Returns
+    {llm_checked: bool, llm_flag: bool | None}.
+
+    llm_checked False means the pass could not run (no key / API error) —
+    the caller must NOT treat that as clean.
+    """
+    if not api_key or not text:
+        return {"llm_checked": False, "llm_flag": None}
+    import httpx
+    try:
+        async with httpx.AsyncClient(timeout=20) as client:
+            r = await client.post(
+                "https://api.anthropic.com/v1/messages",
+                headers={
+                    "x-api-key": api_key,
+                    "anthropic-version": "2023-06-01",
+                    "content-type": "application/json",
+                },
+                json={
+                    "model": model,
+                    "max_tokens": 5,
+                    "messages": [{"role": "user", "content": _LLM_PROMPT + text}],
+                },
+            )
+            r.raise_for_status()
+            answer = "".join(
+                block.get("text", "") for block in r.json().get("content", [])
+            ).strip().upper()
+    except (httpx.HTTPError, ValueError, KeyError):
+        return {"llm_checked": False, "llm_flag": None}
+    if answer.startswith("YES"):
+        return {"llm_checked": True, "llm_flag": True}
+    if answer.startswith("NO"):
+        return {"llm_checked": True, "llm_flag": False}
+    return {"llm_checked": False, "llm_flag": None}  # unexpected output — fail closed
 
 
 if __name__ == "__main__":

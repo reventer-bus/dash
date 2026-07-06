@@ -628,6 +628,41 @@ def unread_comment_count(order_id: str, user_id: str) -> int:
                and user_id not in (c.get("read_by") or []))
 
 
+def comments_overview(user_id: str) -> list[dict]:
+    """Admin message panel (PLAN #4): one row per order that has comments,
+    with unread count for the given user and the latest comment, newest
+    activity first."""
+    by_order: dict[str, dict] = {}
+    for c in _comments:
+        oid = c.get("order_id") or ""
+        row = by_order.setdefault(oid, {"order_id": oid, "total": 0, "unread": 0, "latest": None})
+        row["total"] += 1
+        if user_id not in (c.get("read_by") or []):
+            row["unread"] += 1
+        if row["latest"] is None or (c.get("created_at") or "") >= (row["latest"].get("created_at") or ""):
+            row["latest"] = c
+    out = []
+    for row in by_order.values():
+        order = get_order(row["order_id"])
+        latest = row["latest"] or {}
+        out.append({
+            "order_id": row["order_id"],
+            "order_name": (order or {}).get("name"),
+            "order_status": (order or {}).get("status"),
+            "assigned_partner": (order or {}).get("assigned_partner"),
+            "total": row["total"],
+            "unread": row["unread"],
+            "latest": {
+                "text": latest.get("text"),
+                "author_name": latest.get("author_name"),
+                "author_role": latest.get("author_role"),
+                "created_at": latest.get("created_at"),
+            },
+        })
+    out.sort(key=lambda r: r["latest"]["created_at"] or "", reverse=True)
+    return out
+
+
 def _resolve_order_id(order_id: str) -> str:
     """Try to find the canonical order id (matches by id or spec_id)."""
     o = get_order(order_id)

@@ -1567,6 +1567,10 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   // Fetched on mount + every 60s so the tab badge shows unread without opening it.
   const [msgOverview, setMsgOverview] = useState(null)
   const [openThreadOrder, setOpenThreadOrder] = useState(null)
+  // Kanban search & filter (PLAN #11)
+  const [kanbanSearch, setKanbanSearch] = useState('')
+  const [kanbanPartnerFilter, setKanbanPartnerFilter] = useState('')
+  const [kanbanErrorsOnly, setKanbanErrorsOnly] = useState(false)
 
   // Slicer state
   const [slicerFile, setSlicerFile] = useState(null)
@@ -2115,10 +2119,23 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
   // Kanban: group allOrders by stage
   const kanbanByStage = {}
   ORDER_STAGES.forEach(s => { kanbanByStage[s] = [] })
-  allOrders.filter(o => o.status !== 'CANCELLED').forEach(o => {
+  const kanbanQuery = kanbanSearch.trim().toLowerCase()
+  const kanbanMatches = (o) => {
+    if (kanbanErrorsOnly && !o.needs_redo &&
+        !(o.print_history || []).some(a => a.status === 'failed')) return false
+    if (kanbanPartnerFilter && o.assigned_partner !== kanbanPartnerFilter) return false
+    if (!kanbanQuery) return true
+    return [o.name, o.customer_name, o.material, o.shopify_order,
+            o.id, o.spec_id, o.assigned_partner_name]
+      .some(v => (v || '').toString().toLowerCase().includes(kanbanQuery))
+  }
+  allOrders.filter(o => o.status !== 'CANCELLED' && kanbanMatches(o)).forEach(o => {
     const s = o.status
     if (kanbanByStage[s]) kanbanByStage[s].push(o)
   })
+  const kanbanPartnerOptions = [...new Set(allOrders.map(o => o.assigned_partner).filter(Boolean))]
+  const kanbanFiltered = Boolean(kanbanQuery || kanbanPartnerFilter || kanbanErrorsOnly)
+  const kanbanShown = Object.values(kanbanByStage).reduce((n, arr) => n + arr.length, 0)
 
   return (
       <ThemeCtx.Provider value={T}>
@@ -2253,9 +2270,66 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
       {/* ── KANBAN ───────────────────────────────────────────────────────────── */}
       {safeTab === 'kanban' && (
         <div>
-          <SectionHead>
+          <SectionHead action={
+            kanbanFiltered
+              ? <span style={{ fontSize: 9, color: '#00cc66' }}>{kanbanShown} match{kanbanShown !== 1 ? 'es' : ''}</span>
+              : null
+          }>
             Kanban Board — {activeOrders.length} active
           </SectionHead>
+
+          {/* Search + filters (PLAN #11) */}
+          <div style={{ display: 'flex', gap: 8, marginBottom: 10, flexWrap: 'wrap', alignItems: 'center' }}>
+            <input
+              value={kanbanSearch}
+              onChange={e => setKanbanSearch(e.target.value)}
+              placeholder="Search customer, order #, material…"
+              style={{
+                flex: '1 1 220px', maxWidth: 320, background: T.inputBg,
+                border: `1px solid ${T.inputBorder}`, color: T.text,
+                padding: '6px 10px', borderRadius: 6, fontSize: 11, outline: 'none',
+              }}
+            />
+            {kanbanPartnerOptions.length > 0 && (
+              <select
+                value={kanbanPartnerFilter}
+                onChange={e => setKanbanPartnerFilter(e.target.value)}
+                style={{
+                  background: T.inputBg, border: `1px solid ${T.inputBorder}`,
+                  color: kanbanPartnerFilter ? T.text : T.textDim,
+                  padding: '6px 8px', borderRadius: 6, fontSize: 10, cursor: 'pointer',
+                }}
+              >
+                <option value="">All partners</option>
+                {kanbanPartnerOptions.map(pid => (
+                  <option key={pid} value={pid}>{partnerDisplayName ? partnerDisplayName(pid) : pid}</option>
+                ))}
+              </select>
+            )}
+            <label style={{
+              display: 'flex', alignItems: 'center', gap: 5, fontSize: 10,
+              color: kanbanErrorsOnly ? '#ff4444' : T.textDim, cursor: 'pointer', userSelect: 'none',
+            }}>
+              <input
+                type="checkbox"
+                checked={kanbanErrorsOnly}
+                onChange={e => setKanbanErrorsOnly(e.target.checked)}
+              />
+              Errors only
+            </label>
+            {kanbanFiltered && (
+              <button
+                onClick={() => { setKanbanSearch(''); setKanbanPartnerFilter(''); setKanbanErrorsOnly(false) }}
+                style={{
+                  fontSize: 9, padding: '4px 10px', background: 'transparent',
+                  border: `1px solid ${T.border}`, color: T.textDim,
+                  borderRadius: 5, cursor: 'pointer',
+                }}
+              >
+                Clear
+              </button>
+            )}
+          </div>
 
           {/* Kanban columns */}
           <div style={{ display: 'flex', gap: 10, overflowX: 'auto', paddingBottom: 12 }}>

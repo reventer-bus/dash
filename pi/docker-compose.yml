@@ -1,0 +1,32 @@
+# FOFUS franchise Pi node stack (PLAN #6)
+#   fdm-monster  — print farm agent: queues jobs, talks to printers
+#   heartbeat    — 60s ping to the backend so HQ sees the node online
+#   filaops      — Bambu MQTT → filament consumption bridge
+
+services:
+  fdm-monster:
+    image: fdmmonster/fdm-monster:latest
+    restart: unless-stopped
+    ports:
+      - "4000:4000"
+    volumes:
+      - fdm-monster-data:/app/media
+
+  heartbeat:
+    image: python:3.11-slim
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./agents:/agents:ro
+    command: ["python", "-u", "/agents/heartbeat.py"]
+
+  filaops:
+    image: python:3.11-slim
+    restart: unless-stopped
+    env_file: .env
+    volumes:
+      - ./agents:/agents:ro
+    command: ["sh", "-c", "pip install --quiet paho-mqtt==2.1.0 && python -u /agents/filaops_bridge.py"]
+
+volumes:
+  fdm-monster-data:

@@ -116,14 +116,13 @@ Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 ### 4. Admin Message Panel
 - [x] Backend (Jul 05): `GET /api/v1/farm/comments/overview` — every order with comments, unread count for the caller, latest message, newest-first; partner-scoped tokens see only their own orders
 - [x] Frontend panel (Jul 05): Messages tab in the dashboard — thread list with unread badges (tab badge shows total unread, polled 60s), expand a row to read + reply inline (reuses CommentThread), opening a thread marks it read for JWT users. Partners see the same tab scoped to their own orders.
-- [ ] Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
+- [x] Notification to admin on new message (Jul 05): partner comments ping HQ via AiSensy WhatsApp + Resend email (`app/services/notify.py`, env-gated dry-run until `AISENSY_API_KEY` / `RESEND_API_KEY` / `ADMIN_WHATSAPP` / `ADMIN_EMAIL` are set); admin comments ping the partner's user accounts
 - [x] Unread/read state synced with backend (per-comment `read_by` + mark-read endpoint, Phase 1)
 
 ### 5. Photo Storage — Cloudflare R2
-- Current: base64 in JSONL bloats file size (~100KB per photo)
-- Upload to Cloudflare R2 bucket → store URL in order record
-- Env: `R2_BUCKET`, `R2_ACCOUNT_ID`, `R2_ACCESS_KEY`, `R2_SECRET_KEY`
-- 5MB max file size validation
+**Status: ✅ Built (Jul 05), env-gated — set the R2_* vars to activate.**
+- [x] `app/services/r2_storage.py`: attachment uploads mirror to R2 when `R2_ACCOUNT_ID`/`R2_ACCESS_KEY`/`R2_SECRET_KEY`/`R2_BUCKET` are set (optional `R2_PUBLIC_BASE` for direct links). Disk stays the hot cache; if the disk copy is gone (fresh box) the download endpoint 302s to the R2 URL or a presigned link. Covers STL/3MF too (#12). boto3 added to requirements.
+- [x] Size validation already enforced (10 MB photos / 25 MB other, Phase 2 UI work)
 
 ### 6. Raspberry Pi Franchise Node
 Each new franchise needs a Pi 4B running as a print farm edge node:
@@ -133,23 +132,22 @@ Each new franchise needs a Pi 4B running as a print farm edge node:
 - **Heartbeat agent** — 60s ping to `/api/v1/nodes/heartbeat` with `{franchise_id, printer_ids}`
 - **Tailscale VPN** — Pi joins `fofus-mesh` tailnet for HQ SSH access
 
-**Files needed:**
-```
-pi/setup-pi.sh           — one-shot Pi setup (Docker, Tailscale, service install)
-pi/docker-compose.yml    — FDM Monster + FilaOps + Bambu bridge
-pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRITORY_PINCODES
-```
+**Status (Jul 05): node stack + backend channel built — flashing a real Pi and creating the tailnet (manual task #8) remain.**
+- [x] `pi/setup-pi.sh`, `pi/docker-compose.yml` (FDM Monster + heartbeat + FilaOps bridge), `pi/.env.example`
+- [x] `pi/agents/heartbeat.py` — stdlib-only 60s ping → `POST /api/v1/nodes/heartbeat` (X-Node-Key)
+- [x] `pi/agents/filaops_bridge.py` — Bambu LAN MQTT `device/{SN}/report` → AMS tray remain % → `POST /api/v1/filament/log` (decrements the spool, feeds the existing low-stock alerts)
+- [x] Backend: `/api/v1/nodes/heartbeat`, `/api/v1/nodes` (fleet view, online = pinged <120s), `/api/v1/filament/log` — all gated by `NODE_API_KEY` shared secret when set
+- [ ] Flash a Pi, `tailscale up` into the fofus-mesh tailnet, fill `.env`, run `setup-pi.sh`
 
 ---
 
 ## 🟠 MEDIUM — Growth & Automation
 
 ### 7. n8n Workflow Integration
-- n8n at `gni123.app.n8n.cloud` is live but needs Shopify API credential set
-- Workflow 1: Shopify order → Claude AI parse → OrcaSlicer (Hetzner) → G-code to R2 → job to backend
-- Workflow 2: WhatsApp (AiSensy) intake → order created in backend → payment link
-- Workflow 3: Print complete webhook → Shiprocket label → WhatsApp customer notification
-- Workflow 4: Printer error → partner + admin WhatsApp alert
+**Status (Jul 05): templates + wiring guide in `docs/n8n/` — importing/activating them in gni123.app.n8n.cloud is manual (n8n access needed).**
+- [x] `docs/n8n/chat-relay-workflow.json` — importable chat-relay workflow: media messages rejected, text masked via the relay API, only `masked_text` ever forwarded
+- [x] `docs/n8n/README.md` — instance variables + node-by-node wiring for all four workflows against the new backend endpoints
+- [ ] Import + activate in n8n cloud; add the Shopify custom-token credential to wf `02bp8M3bjvqr0l7r` (manual task #7)
 
 ### 8. Customer Order Tracking Page
 **Status: ✅ Built (Jul 05). Map `track.fofus.in` to the customer Vercel project with a rewrite to `/track` to finish.**
@@ -164,18 +162,15 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - ✅ Sitemap at `/sitemap.xml` (Next.js route)
 - ✅ Robots.txt at `/robots.txt` (Next.js route)
 - ✅ Page-level metadata on home, products, upload, franchise, account pages
-- [ ] Structured data JSON-LD for products / LocalBusiness
-- [ ] Image alt-text audit on product grid
-- [ ] Core Web Vitals / lazy image loading audit
+- [x] Structured data JSON-LD (Jul 05): LocalBusiness (GNI Labs LLP, Irinjalakuda address) in the customer layout; ItemList/Product with offers on /products
+- [x] Image alt-text on product grid (altText fallback to title) — was already in place, verified
+- [x] Lazy images via next/image with `sizes` — was already in place, verified
 
 ### 10. Shopify Auto-Fulfillment at DISPATCH
-- When partner advances to DISPATCH → auto-push tracking to Shopify + send customer email
-- Pre-fill from `tracking_url` and `parcel_code` on the order card
+**Status: ✅ Done (Jul 05)** — `shopify_pusher.auto_push_if_needed()` fires on every PATCH to DONE/DISPATCH: staff note always, fulfillment with tracking (from `parcel_code`/`tracking_url`/`tracking_company`, `notify_customer: true`) at DISPATCH. Idempotent per status; dry-run without `SHOPIFY_ADMIN_TOKEN`.
 
 ### 11. Order Search & Filter
-- Search by customer name, order number, material
-- Filter Kanban by partner, date range, error state
-- Needed once order volume exceeds 30–50/day
+**Status: ✅ Built (Jul 05)** — Kanban toolbar: text search (customer, order #, material, partner name, id), partner dropdown, errors-only toggle (needs_redo or failed print attempts), live match count + clear. Date-range filter deferred until volume needs it.
 
 ### 12. STL File Attachment
 - Upload STL/3MF to R2 with order
@@ -183,8 +178,7 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - Used by slicer pipeline
 
 ### 13. Print Error Reprint Flow
-- Mark error → auto-clone order at AI_PREP stage
-- Track reprint count + carry error photo forward
+**Status: ✅ Backend built (Jul 05)** — `POST /farm/orders/{id}/reprint` clones the order at AI_PREP carrying partner assignment, 3D files, and photos; lineage recorded both ways (`reprint_of` / `reprint_count`); Shopify ids deliberately NOT copied so a reprint can never double-fulfill. Add a "Reprint" button on the error card UI when convenient.
 
 ---
 
@@ -202,9 +196,7 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - Super Admin approves → creates franchise account + Tailscale auth key
 
 ### 15. Revenue & Commission Tracking
-- Per-partner: orders completed, revenue, commission earned (% of order total)
-- Weekly PDF report
-- Admin global P&L view
+**Status: backend built (Jul 05)** — `GET /farm/revenue`: per-partner completed orders, revenue, commission split (`PARTNER_SHARE_PCT` env, default 0.70), 8-week trend; partner tokens see their own row. PDF export + dashboard view still open.
 
 ### 16. AI Print Failure Detection
 - Bambu X1 camera feed → CV model detects spaghetti/layer shifts
@@ -212,15 +204,13 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - `repo/backend/app/ai/failure_detector.py` in archive — needs camera integration
 
 ### 17. Bulk Operations
-- Select multiple cards → advance all / assign all / export CSV
+**Status: backend built (Jul 05)** — `POST /farm/orders/bulk-advance` (next Kanban stage each, partner-scoped) + `GET /farm/orders/export.csv`; bulk-assign existed since Phase 1. Card multi-select UI on the Kanban still open.
 
 ### 18. WhatsApp Order Alerts (AiSensy)
-- New order → WhatsApp to assigned partner
-- Message: order #, customer, material, quantity
+**Status: ✅ Built (Jul 05), env-gated** — new Shopify order pings HQ (`notify_admin`); assigning a partner pings every active user of that partner (WhatsApp via `internal_phone` + email) with order/material/qty. Dry-run logs until AiSensy/Resend creds are in `/etc/printdash/env`.
 
 ### 19. Maintenance Tracker
-- Log printer service events, alert at >200h since last maintenance
-- Reset counter per printer
+**Status: ✅ Backend built (Jul 05)** — `POST /printers/{id}/maintenance` logs a service event and resets the counter; `GET /printers/maintenance/alerts` lists printers >200h since last service.
 
 ### 20. Mobile View
 - Responsive layout for partner checking from phone at printer

@@ -283,6 +283,65 @@ async def main():
             check("timeline has status transitions",
                   any(t["stage"] == "Dispatched" for t in b.get("timeline", [])), str(b.get("timeline")))
 
+            # ── 4e. Reprint / bulk ops / revenue / maintenance / CSV ──
+            r = await c.post("/api/v1/farm/orders/shopify-111/reprint", headers=A)
+            b = r.json()
+            check("reprint clones at AI_PREP", b.get("ok") and b["reprint"]["status"] == "AI_PREP", r.text)
+            check("reprint drops shopify_order_id", "shopify_order_id" not in b["reprint"], r.text)
+            clone_id = b["reprint"]["id"]
+            orig = (await c.get("/api/v1/orders/shopify-111/public")).json()
+            check("reprint count recorded", b.get("reprint_count") == 1, r.text)
+
+            r = await c.post("/api/v1/farm/orders/bulk-advance", headers=A,
+                             json={"order_ids": [clone_id, "shopify-111"]})
+            b = r.json()
+            check("bulk-advance moves clone AI_PREP→PRINTING",
+                  any(a["id"] == clone_id and a["to"] == "PRINTING" for a in b["advanced"]), r.text)
+            check("bulk-advance skips DISPATCH order",
+                  any(s["id"] == "shopify-111" for s in b["skipped"]), r.text)
+
+            r = await c.get("/api/v1/farm/orders/export.csv", headers=A)
+            check("CSV export", r.status_code == 200 and r.text.startswith("id,")
+                  and "shopify-111" in r.text, r.text[:100])
+            r = await c.get("/api/v1/farm/orders/export.csv", headers=P)
+            check("CSV export partner-scoped", "shopify-222" not in r.text, r.text[:200])
+
+            r = await c.get("/api/v1/farm/revenue", headers=A)
+            b = r.json()
+            check("revenue report totals", b["completed_orders"] == 1
+                  and b["total_revenue_inr"] == 1499.0, r.text)
+            row = next((x for x in b["partners"] if x["partner_id"] == "101"), None)
+            check("revenue commission split",
+                  row and row["partner_commission_inr"] == round(1499.0 * 0.70, 2), r.text)
+
+            r = await c.post("/api/v1/printers/prn-1/maintenance",
+                             json={"note": "nozzle swap", "serviced_by": "tech"})
+            check("maintenance logged", r.json().get("ok") is True, r.text)
+            r = await c.get("/api/v1/printers/maintenance/alerts")
+            b = r.json()
+            check("maintenance alerts shape", "due" in b and
+                  any(p["id"] == "prn-1" for p in b["ok"] + b["due"]), r.text)
+
+            # ── 4f. Pi node channel (PLAN #6) ──
+            import os as _os
+            r = await c.post("/api/v1/nodes/heartbeat", json={
+                "franchise_id": "101", "printer_ids": ["prn-1"], "agent_version": "1.0"})
+            check("node heartbeat accepted (no key configured)", r.json().get("ok") is True, r.text)
+            _os.environ["NODE_API_KEY"] = "node-secret"
+            r = await c.post("/api/v1/nodes/heartbeat", json={"franchise_id": "101"})
+            check("node heartbeat 401 with key configured + missing", r.status_code == 401, str(r.status_code))
+            r = await c.post("/api/v1/nodes/heartbeat", headers={"X-Node-Key": "node-secret"},
+                             json={"franchise_id": "101", "printer_ids": ["prn-1"]})
+            check("node heartbeat with key", r.json().get("ok") is True, r.text)
+            r = await c.get("/api/v1/nodes", headers=A)
+            b = r.json()
+            check("node fleet online", b["online"] == 1 and b["nodes"][0]["franchise_id"] == "101", r.text)
+            r = await c.post("/api/v1/filament/log", headers={"X-Node-Key": "node-secret"},
+                             json={"spool_id": "spool-1", "used_g": 15.5, "printer_id": "prn-1"})
+            b = r.json()
+            check("filament log decrements spool", b.get("ok") and b["remaining_g"] == 24.5, r.text)
+            _os.environ.pop("NODE_API_KEY", None)
+
             # cleanup-test-data admin gate
             r = await c.post("/api/v1/farm/admin/cleanup-test-data?dry_run=true", headers=P)
             check("cleanup-test-data partner → 403", r.status_code == 403, r.text)

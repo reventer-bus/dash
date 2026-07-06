@@ -37,11 +37,41 @@ async function getProducts(): Promise<ShopifyProduct[]> {
 
 const CATEGORIES = ['Gifts', 'Home decor', 'Fashion accessories', 'Home essentials', 'Kids', 'Custom Print']
 
+function productsJsonLd(products: ShopifyProduct[]) {
+  return {
+    '@context': 'https://schema.org',
+    '@type': 'ItemList',
+    itemListElement: products.slice(0, 24).map((p, i) => ({
+      '@type': 'ListItem',
+      position: i + 1,
+      item: {
+        '@type': 'Product',
+        name: p.title,
+        image: p.featuredImage?.url,
+        url: `https://store.fofus.in/products/${p.handle}`,
+        brand: { '@type': 'Brand', name: p.vendor || 'FOFUS' },
+        offers: {
+          '@type': 'Offer',
+          price: p.priceRangeV2.minVariantPrice.amount,
+          priceCurrency: p.priceRangeV2.minVariantPrice.currencyCode || 'INR',
+          availability: 'https://schema.org/InStock',
+        },
+      },
+    })),
+  }
+}
+
 export default async function ProductsPage() {
   const products = await getProducts()
 
   return (
     <div className="pt-14 min-h-screen bg-gray-50">
+      {products.length > 0 && (
+        <script
+          type="application/ld+json"
+          dangerouslySetInnerHTML={{ __html: JSON.stringify(productsJsonLd(products)) }}
+        />
+      )}
       <div className="max-w-6xl mx-auto px-4 py-12">
         <div className="flex items-end justify-between mb-10">
           <div>

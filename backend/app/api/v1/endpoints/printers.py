@@ -44,6 +44,57 @@ async def remove_printer(printer_id: str):
     return {"ok": True}
 
 
+# ── Maintenance tracker (PLAN #19) ───────────────────────────────────────────
+
+_SERVICE_INTERVAL_H = 200  # alert when a printer runs this long since last service
+
+
+class MaintenancePayload(BaseModel):
+    note: str = ""
+    serviced_by: str = ""
+
+
+@router.get("/maintenance/alerts")
+async def maintenance_alerts():
+    """Printers overdue for service: total_print_hours minus the hours
+    recorded at the last service event exceeds the 200h interval."""
+    due, ok = [], []
+    for p in farm_store.get_status()["printers"]:
+        total = float(p.get("total_print_hours") or 0)
+        at_service = float(p.get("hours_at_last_service") or 0)
+        since = round(total - at_service, 1)
+        entry = {
+            "id": p.get("id"), "name": p.get("name"),
+            "hours_since_service": since,
+            "interval_h": _SERVICE_INTERVAL_H,
+            "last_service_at": (p.get("maintenance_log") or [{}])[-1].get("at"),
+        }
+        (due if since > _SERVICE_INTERVAL_H else ok).append(entry)
+    due.sort(key=lambda e: -e["hours_since_service"])
+    return {"due": due, "ok": ok, "interval_h": _SERVICE_INTERVAL_H}
+
+
+@router.post("/{printer_id}/maintenance")
+async def log_maintenance(printer_id: str, body: MaintenancePayload):
+    """Record a service event and reset the hours-since-service counter."""
+    from datetime import datetime, timezone
+    printer = next((p for p in farm_store.get_status()["printers"]
+                    if p.get("id") == printer_id), None)
+    if printer is None:
+        return {"ok": False, "error": "Printer not found"}
+    event = {
+        "at": datetime.now(timezone.utc).isoformat(),
+        "note": body.note,
+        "serviced_by": body.serviced_by,
+        "hours_at_service": float(printer.get("total_print_hours") or 0),
+    }
+    printer.setdefault("maintenance_log", []).append(event)
+    printer["hours_at_last_service"] = event["hours_at_service"]
+    await farm_store.upsert_printer(printer)
+    return {"ok": True, "printer_id": printer_id, "event": event,
+            "service_count": len(printer["maintenance_log"])}
+
+
 @router.get("/{printer_id}/live")
 async def live_status(printer_id: str):
     """Proxy a one-shot status poll to the printer's real API."""

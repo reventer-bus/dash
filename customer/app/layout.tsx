@@ -30,11 +30,36 @@ export const metadata: Metadata = {
   },
 }
 
+const localBusinessJsonLd = {
+  '@context': 'https://schema.org',
+  '@type': 'LocalBusiness',
+  '@id': 'https://fofus.in/#business',
+  name: 'FOFUS — GNI Labs LLP',
+  url: 'https://fofus.in',
+  email: 'support@fofus.in',
+  telephone: '+91-9895854640',
+  description:
+    'Franchise-powered 3D print-on-demand network. Upload a design, get an instant INR quote, printed and delivered by local FOFUS partners across India.',
+  address: {
+    '@type': 'PostalAddress',
+    streetAddress: 'Thommana',
+    addressLocality: 'Irinjalakuda',
+    addressRegion: 'Kerala',
+    postalCode: '680121',
+    addressCountry: 'IN',
+  },
+  sameAs: ['https://store.fofus.in'],
+}
+
 export default function RootLayout({ children }: { children: React.ReactNode }) {
   return (
     <ClerkProvider>
       <html lang="en">
         <body>
+          <script
+            type="application/ld+json"
+            dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessJsonLd) }}
+          />
           <Navbar />
           <main>{children}</main>
           <Footer />

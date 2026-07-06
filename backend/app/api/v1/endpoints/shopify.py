@@ -202,4 +202,11 @@ async def _process_order(order: dict):
         "ts": order.get("created_at"),
     }
 
-    await farm_store.add_shopify_order(job)
+    stored = await farm_store.add_shopify_order(job)
+    # Ping HQ on genuinely new orders only (webhook re-fires are updates)
+    if (stored.get("history") or [{}])[-1].get("event") == "shopify_webhook":
+        from app.services import notify
+        await notify.notify_admin(
+            f"New order {stored.get('shopify_order') or stored.get('id')}",
+            f"{stored.get('customer_name') or 'Customer'} · "
+            f"{stored.get('material') or 'PLA'} · ₹{stored.get('total_inr') or 0}")

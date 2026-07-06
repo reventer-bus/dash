@@ -51,6 +51,26 @@ async def require_admin(user: Optional[User] = Depends(get_optional_user)) -> Op
     return user
 
 
+async def _notify_partner_users(partner_id: str, message: str):
+    """WhatsApp/email every active user account of a partner (best-effort,
+    dry-run without notify creds)."""
+    from sqlalchemy import select
+    from app.core.database import session_scope
+    from app.services import notify
+    try:
+        async with session_scope() as s:
+            users = (await s.execute(
+                select(User).where(User.partner_id == partner_id, User.active == True)  # noqa: E712
+            )).scalars().all()
+        for u in users:
+            if u.internal_phone:
+                await notify.send_whatsapp(u.internal_phone, message)
+            await notify.send_email(u.email, "FOFUS printdash", message)
+    except Exception:  # notifications must never break the order flow
+        import logging
+        logging.getLogger("notify").exception("partner notify failed")
+
+
 # ── Feedback ──────────────────────────────────────────────────────────────────
 
 class FeedbackPayload(BaseModel):
@@ -458,6 +478,11 @@ async def assign_partner_to_order(
         # Remember the display name so the dashboard doesn't have to look it up
         result["assigned_partner_name"] = partner_name
         await farm_store.save_order(result)
+    await _notify_partner_users(
+        partner_id,
+        f"New FOFUS job: {result.get('name') or order_id} · "
+        f"{result.get('material') or 'PLA'} × {result.get('qty', 1)}",
+    )
     return result
 
 
@@ -686,6 +711,11 @@ async def upload_attachment(
     disk_path.write_bytes(body)
 
     mime = file.content_type or _KIND_MIME[kind]
+    # Durable copy to Cloudflare R2 when configured (PLAN #5/#12); disk stays
+    # the hot cache the download endpoint serves first.
+    from app.services import r2_storage
+    r2 = await r2_storage.upload_bytes(
+        f"attachments/{order_id}/{att_id}_{safe_name}", body, mime)
     attachment = {
         "id": att_id,
         "name": safe_name,
@@ -697,6 +727,7 @@ async def upload_attachment(
         "note": note,
         "disk_path": str(disk_path),
         "download_url": f"/api/v1/farm/orders/{order_id}/download/{att_id}",
+        **(r2 or {}),
     }
     await farm_store.add_attachment(order_id, attachment)
     return {"ok": True, "attachment": attachment, "order_id": order_id}
@@ -834,6 +865,15 @@ async def download_attachment(
         return {"ok": False, "error": "Attachment not found"}
     path = Path(att.get("disk_path", ""))
     if not path.exists():
+        # Disk cache gone (fresh box) — fall back to the R2 copy
+        from fastapi.responses import RedirectResponse
+        from app.services import r2_storage
+        if att.get("r2_url"):
+            return RedirectResponse(att["r2_url"], status_code=302)
+        if att.get("r2_key"):
+            url = await r2_storage.presigned_url(att["r2_key"])
+            if url:
+                return RedirectResponse(url, status_code=302)
         return {"ok": False, "error": "File missing on disk"}
     data = path.read_bytes()
     # Images inline, others as downloads
@@ -945,6 +985,176 @@ async def mark_redo(order_id: str, user: User = Depends(get_current_partner)):
     return {"ok": True, "order": order}
 
 
+# ── Reprint flow (PLAN #13) ──────────────────────────────────────────────────
+
+_STAGE_ORDER = ["NEW", "AI_PREP", "PRINTING", "POST_PROCESS", "QC", "PACK", "DISPATCH"]
+
+
+@router.post("/orders/{order_id}/reprint")
+async def reprint_order(order_id: str, user: Optional[User] = Depends(get_optional_user)):
+    """Clone a failed order as a fresh card at AI_PREP (PLAN #13).
+
+    The clone carries the partner assignment, 3D files, and error photos
+    forward, and records reprint lineage both ways. Shopify identifiers are
+    deliberately NOT copied — the original order owns fulfillment; a clone
+    that reached DISPATCH must never auto-push a second fulfillment.
+    """
+    order = farm_store.get_order(order_id)
+    if order is None:
+        return {"ok": False, "error": "Order not found"}
+    _ensure_order_access(order, user)
+
+    canonical = order.get("id") or order.get("spec_id")
+    n = int(order.get("reprint_count") or 0) + 1
+    clone_id = f"{canonical}-r{n}"
+    while farm_store.get_order(clone_id) is not None:
+        n += 1
+        clone_id = f"{canonical}-r{n}"
+
+    carried_attachments = [
+        a for a in (order.get("attachments") or [])
+        if a.get("kind") in ("3d_model", "sliced_3mf", "photo")
+    ]
+    clone = {
+        "id": clone_id,
+        "name": f"{order.get('name') or canonical} (reprint {n})",
+        "status": "AI_PREP",
+        "material": order.get("material"),
+        "qty": order.get("qty", 1),
+        "source": "reprint",
+        "shopify_order": order.get("shopify_order"),  # display ref only — no shopify_order_id
+        "customer_name": order.get("customer_name"),
+        "assigned_partner": order.get("assigned_partner"),
+        "assigned_partner_name": order.get("assigned_partner_name"),
+        "attachments": [dict(a) for a in carried_attachments],
+        "reprint_of": canonical,
+        "reprint_n": n,
+        "history": [{
+            "event": "reprint_created",
+            "of": canonical,
+            "at": datetime.now(timezone.utc).isoformat(),
+        }],
+    }
+    await farm_store.add_order(clone)
+
+    order["reprint_count"] = n
+    order["needs_redo"] = False
+    order.setdefault("history", []).append({
+        "event": "reprint_spawned",
+        "clone_id": clone_id,
+        "at": datetime.now(timezone.utc).isoformat(),
+    })
+    await farm_store.save_order(order)
+    return {"ok": True, "reprint": clone, "original_id": canonical, "reprint_count": n}
+
+
+# ── Bulk operations (PLAN #17) ───────────────────────────────────────────────
+
+class BulkAdvancePayload(BaseModel):
+    order_ids: list[str]
+
+
+@router.post("/orders/bulk-advance")
+async def bulk_advance(payload: BulkAdvancePayload, user: Optional[User] = Depends(get_optional_user)):
+    """Advance each order to its next Kanban stage. Orders already at
+    DISPATCH, cancelled, or outside the pipeline are skipped."""
+    advanced, skipped = [], []
+    for oid in payload.order_ids:
+        order = farm_store.get_order(oid)
+        if order is None:
+            skipped.append({"id": oid, "reason": "not found"})
+            continue
+        pid = _partner_scope(user)
+        if pid is not None and order.get("assigned_partner") != pid:
+            skipped.append({"id": oid, "reason": "not yours"})
+            continue
+        status = order.get("status")
+        if status not in _STAGE_ORDER or status == "DISPATCH":
+            skipped.append({"id": oid, "reason": f"cannot advance from {status}"})
+            continue
+        new_status = _STAGE_ORDER[_STAGE_ORDER.index(status) + 1]
+        order["status"] = new_status
+        order.setdefault("history", []).append({
+            "event": "status_change", "from": status, "to": new_status,
+            "via": "bulk_advance",
+            "at": datetime.now(timezone.utc).isoformat(),
+        })
+        await farm_store.save_order(order)
+        advanced.append({"id": oid, "from": status, "to": new_status})
+    return {"ok": True, "advanced": advanced, "skipped": skipped}
+
+
+@router.get("/orders/export.csv")
+async def export_orders_csv(user: Optional[User] = Depends(get_optional_user)):
+    """Order book as CSV (partner-scoped tokens get their own orders)."""
+    import csv
+    import io
+    pid = _partner_scope(user)
+    orders = farm_store.all_orders() if pid is None else farm_store.orders_for_partner(pid)
+    cols = ["id", "name", "status", "material", "qty", "shopify_order",
+            "customer_name", "assigned_partner", "assigned_partner_name",
+            "total_inr", "parcel_code", "tracking_url", "created_at", "updated_at"]
+    buf = io.StringIO()
+    w = csv.DictWriter(buf, fieldnames=cols, extrasaction="ignore")
+    w.writeheader()
+    for o in orders:
+        w.writerow({k: o.get(k, "") for k in cols})
+    from fastapi import Response as _Resp
+    return _Resp(
+        content=buf.getvalue(),
+        media_type="text/csv",
+        headers={"Content-Disposition": "attachment; filename=orders.csv"},
+    )
+
+
+# ── Revenue & commission (PLAN #15) ──────────────────────────────────────────
+
+@router.get("/revenue")
+async def revenue_report(user: Optional[User] = Depends(get_optional_user)):
+    """Per-partner revenue + commission over completed orders, plus an
+    8-week trend. Commission split comes from PARTNER_SHARE_PCT (env,
+    default 0.70 = partner keeps 70%). Partner-scoped tokens see only
+    their own row."""
+    import os as _os
+    share = float(_os.environ.get("PARTNER_SHARE_PCT", "0.70"))
+    completed = [o for o in farm_store.all_orders()
+                 if o.get("status") in ("DISPATCH", "DONE") and o.get("total_inr")]
+    pid = _partner_scope(user)
+    if pid is not None:
+        completed = [o for o in completed if o.get("assigned_partner") == pid]
+
+    partners: dict[str, dict] = {}
+    weeks: dict[str, float] = {}
+    for o in completed:
+        p = o.get("assigned_partner") or "unassigned"
+        row = partners.setdefault(p, {
+            "partner_id": p, "partner_name": o.get("assigned_partner_name") or p,
+            "orders": 0, "revenue_inr": 0.0,
+        })
+        value = float(o.get("total_inr") or 0)
+        row["orders"] += 1
+        row["revenue_inr"] += value
+        created = (o.get("created_at") or "")[:10]
+        if created:
+            try:
+                iso = datetime.fromisoformat(created).isocalendar()
+                weeks[f"{iso[0]}-W{iso[1]:02d}"] = weeks.get(f"{iso[0]}-W{iso[1]:02d}", 0.0) + value
+            except ValueError:
+                pass
+    for row in partners.values():
+        row["revenue_inr"] = round(row["revenue_inr"], 2)
+        row["partner_commission_inr"] = round(row["revenue_inr"] * share, 2)
+        row["hq_share_inr"] = round(row["revenue_inr"] * (1 - share), 2)
+
+    return {
+        "partner_share_pct": share,
+        "partners": sorted(partners.values(), key=lambda r: -r["revenue_inr"]),
+        "total_revenue_inr": round(sum(r["revenue_inr"] for r in partners.values()), 2),
+        "weekly": dict(sorted(weeks.items())[-8:]),
+        "completed_orders": len(completed),
+    }
+
+
 # ── Comments / per-order chat thread ────────────────────────────────────────
 
 class CommentPayload(BaseModel):
@@ -983,6 +1193,18 @@ async def add_order_comment(
         "author_role": author_role,
         "attachment_id": payload.attachment_id,
     })
+    # Ping the other side of the thread (dry-run without notify creds)
+    from app.services import notify
+    preview = payload.text.strip()[:120]
+    if author_role == "super_admin":
+        if order.get("assigned_partner"):
+            await _notify_partner_users(
+                order["assigned_partner"],
+                f"Message on {order.get('name') or order_id}: {preview}")
+    else:
+        await notify.notify_admin(
+            f"New message on {order.get('name') or order_id}",
+            f"{author_name}: {preview}")
     return {"ok": True, "comment": comment}
 
 

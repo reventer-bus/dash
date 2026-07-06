@@ -1,0 +1,181 @@
+{
+  "name": "FOFUS Chat Relay — WhatsApp ↔ Google Chat (masked)",
+  "nodes": [
+    {
+      "parameters": {
+        "httpMethod": "POST",
+        "path": "aisensy-inbound",
+        "responseMode": "lastNode"
+      },
+      "id": "webhook-aisensy",
+      "name": "AiSensy Inbound Webhook",
+      "type": "n8n-nodes-base.webhook",
+      "typeVersion": 2,
+      "position": [0, 0]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": { "caseSensitive": false },
+          "conditions": [
+            {
+              "leftValue": "={{ $json.body.type || 'text' }}",
+              "rightValue": "text",
+              "operator": { "type": "string", "operation": "equals" }
+            }
+          ]
+        }
+      },
+      "id": "if-text-only",
+      "name": "Text message?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [220, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRINTDASH_URL }}/api/v1/chat/threads",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Relay-Key", "value": "={{ $env.CHAT_RELAY_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "order_id", "value": "={{ $json.body.order_id }}" },
+            { "name": "customer_wa_id", "value": "={{ $json.body.from }}" }
+          ]
+        }
+      },
+      "id": "ensure-thread",
+      "name": "Ensure Thread",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [440, -80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $env.PRINTDASH_URL }}/api/v1/chat/threads/{{ $json.id }}/messages",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            { "name": "X-Relay-Key", "value": "={{ $env.CHAT_RELAY_API_KEY }}" }
+          ]
+        },
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "direction", "value": "customer_to_tech" },
+            { "name": "text", "value": "={{ $('AiSensy Inbound Webhook').item.json.body.text }}" }
+          ]
+        }
+      },
+      "id": "mask-message",
+      "name": "Mask via printdash",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [660, -80]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {},
+          "conditions": [
+            {
+              "leftValue": "={{ $json.relay }}",
+              "rightValue": true,
+              "operator": { "type": "boolean", "operation": "true" }
+            }
+          ]
+        }
+      },
+      "id": "if-relay",
+      "name": "Relay allowed?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [880, -80]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "={{ $('Ensure Thread').item.json.google_chat_space_id }}",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "text", "value": "={{ $json.masked_text }}" }
+          ]
+        }
+      },
+      "id": "google-chat",
+      "name": "→ Google Chat (masked only)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1100, -160]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.aisensy.com/campaign/t1/api/v2",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "apiKey", "value": "={{ $env.AISENSY_API_KEY }}" },
+            { "name": "campaignName", "value": "={{ $env.AISENSY_CAMPAIGN }}" },
+            { "name": "destination", "value": "={{ $('AiSensy Inbound Webhook').item.json.body.from }}" },
+            { "name": "userName", "value": "FOFUS" },
+            { "name": "templateParams", "value": "={{ [$json.masked_text] }}" }
+          ]
+        }
+      },
+      "id": "withhold-notice",
+      "name": "→ Sender: withheld notice",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [1100, 0]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "https://backend.aisensy.com/campaign/t1/api/v2",
+        "sendBody": true,
+        "bodyParameters": {
+          "parameters": [
+            { "name": "apiKey", "value": "={{ $env.AISENSY_API_KEY }}" },
+            { "name": "campaignName", "value": "={{ $env.AISENSY_CAMPAIGN }}" },
+            { "name": "destination", "value": "={{ $json.body.from }}" },
+            { "name": "userName", "value": "FOFUS" },
+            { "name": "templateParams", "value": "={{ ['Sorry — photos and voice notes can\\'t be relayed to the print team yet. Please describe the issue in a text message.'] }}" }
+          ]
+        }
+      },
+      "id": "media-reject",
+      "name": "→ Sender: media not supported",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4,
+      "position": [440, 120]
+    }
+  ],
+  "connections": {
+    "AiSensy Inbound Webhook": { "main": [[{ "node": "Text message?", "type": "main", "index": 0 }]] },
+    "Text message?": {
+      "main": [
+        [{ "node": "Ensure Thread", "type": "main", "index": 0 }],
+        [{ "node": "→ Sender: media not supported", "type": "main", "index": 0 }]
+      ]
+    },
+    "Ensure Thread": { "main": [[{ "node": "Mask via printdash", "type": "main", "index": 0 }]] },
+    "Mask via printdash": { "main": [[{ "node": "Relay allowed?", "type": "main", "index": 0 }]] },
+    "Relay allowed?": {
+      "main": [
+        [{ "node": "→ Google Chat (masked only)", "type": "main", "index": 0 }],
+        [{ "node": "→ Sender: withheld notice", "type": "main", "index": 0 }]
+      ]
+    }
+  },
+  "settings": { "executionOrder": "v1" },
+  "meta": { "templateCredsSetupCompleted": false }
+}

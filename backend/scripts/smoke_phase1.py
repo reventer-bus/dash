@@ -267,6 +267,22 @@ async def main():
             _settings.CHAT_RELAY_ENABLED = False
             _settings.CHAT_RELAY_API_KEY = ""
 
+            # ── 4d. Public customer tracking (PLAN #8) ──
+            r = await c.get("/api/v1/orders/shopify-111/public")
+            b = r.json()
+            check("public tracking by internal id", b.get("ok") is True and b.get("status") == "DISPATCH", r.text)
+            check("public tracking stage label", b.get("status_label") == "Dispatched", r.text)
+            blob = json.dumps(b).lower()
+            check("public payload is PII-free",
+                  "legacy customer" not in blob and "customer_email" not in blob
+                  and "admin_notes" not in blob and "total_inr" not in blob, blob[:200])
+            r = await c.get("/api/v1/orders/111/public")
+            check("public tracking by shopify numeric id", r.json().get("ok") is True, r.text)
+            r = await c.get("/api/v1/orders/nope-404/public")
+            check("public tracking unknown → not found", r.json().get("ok") is False, r.text)
+            check("timeline has status transitions",
+                  any(t["stage"] == "Dispatched" for t in b.get("timeline", [])), str(b.get("timeline")))
+
             # cleanup-test-data admin gate
             r = await c.post("/api/v1/farm/admin/cleanup-test-data?dry_run=true", headers=P)
             check("cleanup-test-data partner → 403", r.status_code == 403, r.text)

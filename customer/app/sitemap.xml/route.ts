@@ -26,6 +26,11 @@ export function GET() {
     <priority>0.8</priority>
   </url>
   <url>
+    <loc>${baseUrl}/track</loc>
+    <changefreq>monthly</changefreq>
+    <priority>0.5</priority>
+  </url>
+  <url>
     <loc>${baseUrl}/account</loc>
     <changefreq>monthly</changefreq>
     <priority>0.4</priority>

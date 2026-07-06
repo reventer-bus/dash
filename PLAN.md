@@ -152,10 +152,13 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 - Workflow 4: Printer error → partner + admin WhatsApp alert
 
 ### 8. Customer Order Tracking Page
-- Public URL: `track.fofus.in/{order_id}` — no login required
-- Shows: current stage, estimated delivery, partner name, shareable photos
-- Polls `/api/v1/orders/{id}/public` every 30s
-- Next.js on Vercel (add to `customer/` project)
+**Status: ✅ Built (Jul 05). Map `track.fofus.in` to the customer Vercel project with a rewrite to `/track` to finish.**
+
+- [x] `GET /api/v1/orders/{ref}/public` — sanitized payload only (stage + label, timeline of status changes, partner display name, courier tracking code/URL, photo URLs). No customer PII, admin notes, pricing, or raw history. Matches internal id, Shopify numeric id, or order number (#1001).
+- [x] `GET /api/v1/orders/{ref}/public/photos/{att_id}` — serves kind=photo attachments only; 3D files/documents are never reachable publicly
+- [x] `customer/app/track/page.tsx` (order-number lookup form) + `track/[orderId]` (stage progress, courier link, farm photos, history), polling every 30s, `noindex`
+- [x] Fixed while building — **the customer app did not build at all as committed**: `next.config.ts` (unsupported on Next 14 → `.mjs`), `FranchiseClient.tsx` missing `'use client'`, invalid Tailwind class `border-black/8`, Clerk v6 `auth.protect()` syntax on the pinned v5 (`auth().protect()`); `customer/package-lock.json` now committed so builds are reproducible
+- [ ] Vercel: point `track.fofus.in` at the customer project (or keep `fofus.in/track` links)
 
 ### 9. SEO Foundation
 - ✅ Sitemap at `/sitemap.xml` (Next.js route)

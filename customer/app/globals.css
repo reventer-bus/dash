@@ -43,6 +43,6 @@ a {
     @apply bg-fofus-green text-fofus-black font-semibold px-6 py-3 rounded-xl hover:opacity-90 transition-opacity inline-block;
   }
   .card {
-    @apply bg-white rounded-2xl border border-black/8 p-6;
+    @apply bg-white rounded-2xl border border-black/[0.08] p-6;
   }
 }

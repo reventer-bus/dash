@@ -1,3 +1,5 @@
+'use client'
+
 import { useState } from 'react'
 import { ArrowRight, Printer, TrendingUp, MapPin, Zap, CheckCircle2, Loader2 } from 'lucide-react'
 import { api } from '@/lib/api'

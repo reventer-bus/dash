@@ -73,36 +73,51 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 Webhook endpoint is live and verifies HMAC via `app/core/config.py` settings.
 
 ### 2. PostgreSQL (Replace JSONL)
-**Status: Data is lost on restart / corruption risk on concurrent writes**
+**Status: ✅ DONE (Phase 1, Jul 05). `farm_store.py` rewired onto Postgres — in-memory read cache + write-through DB on every mutation. JSONL is no longer the data path.**
 
-- Add PostgreSQL — options:
-  - Railway addon (simplest)
-  - Docker Postgres on Ubuntu server alongside the backend
-- Set `DATABASE_URL=postgresql+asyncpg://...` in `/etc/printdash/env`
-- SQLAlchemy async models: `orders`, `messages`, `photos`, `printers`, `inventory`, `partners`
-- Alembic migrations
-- Rewrite `farm_store.py` to use DB queries instead of in-memory list + JSONL
-- Archive code `repo/backend/app/core/database.py` has async SQLAlchemy setup ready to port
+- [x] `Partner`, `User` models added (were missing/incomplete — `models/__init__.py` was empty, no `Partner` model existed despite FK references)
+- [x] Alembic scaffolding — verified against live Postgres 16: `upgrade head`, `alembic check`, `downgrade base` → re-upgrade all pass
+- [x] `backend/02-postgres-setup.sh` — installs Postgres 16 **on the same Ubuntu server as the backend** (not Railway, not Docker), localhost-only bind, writes `DATABASE_URL` into `/etc/printdash/env`, daily `pg_dump`→R2 cron
+- [x] `farm_store.py` rewired to Postgres (migration `0002_farm_doc_store`): orders/printers stored as JSONB docs with indexed hot columns (status, assigned_partner, shopify_order_id); new `spools`/`farm_feedback`/`order_comments` tables; printer connection secrets in a separate column, never returned by read paths
+- [x] **One-time JSONL import**: on first startup against an empty DB, legacy `$MAKER_AI_DIR/spec/*.jsonl` files are imported automatically, so the live server's existing orders survive the cutover (JSONL files left on disk as fallback)
+- [x] End-to-end verified: `backend/scripts/smoke_phase1.py` (37 checks — import, auth, lifecycle, scoping, restart persistence) all green against Postgres 16
+- [x] Fixed while rewiring: naive `TIMESTAMP` columns rejected the app's tz-aware datetimes under asyncpg (registration 500'd); `Printer.jobs` relationship pointed at a `PrintJob` model that doesn't exist (broke SQLAlchemy mapper config on first ORM query = login); `app/services/analytics.py` / `shopify_pusher.py` / `file_resolver.py` were imported by farm.py but absent from the repo (those endpoints 500'd) — real implementations added
 
 ### 3. Role-Based Auth (Admin vs Partner)
-**Status: All partners see all orders; admin cannot reply to messages**
+**Status: ✅ Endpoint scoping DONE (Phase 1, Jul 05). One deliberate gap: anonymous requests still pass unscoped until the frontend sends JWTs — see AUTH_ENFORCE below.**
 
-- JWT login replacing hardcoded sessionStorage
-- Roles: `super_admin`, `franchise_admin`, `partner`
-- Backend: `POST /api/v1/auth/login` returns JWT with `role` + `partner_id` claims
-- Admin login → `business.fofus.in` — sees ALL orders, all partners, global stats
-- Partner login → `{id}-{name}.platform.fofus.in` — sees only their assigned orders
-- API filtering: `/api/v1/farm/status` filters by `partner_id` from JWT if role = partner
+- [x] `auth.py` rewired to query the real `users` table instead of an in-memory dict
+- [x] Roles expanded: `super_admin`, `franchise_admin`, `partner` (original 3) + `technician`, `artist`, `space_manager` (new — see item #21)
+- [x] `require_role()` dependency factory for endpoint-level role gating
+- [x] Endpoint-level `partner_id` scoping in `farm.py`: partner-scoped tokens only see/touch their own orders (`/status`, `/queue`, `/analytics`, PATCH, attachments, comments, print-attempts → 403 on foreign orders); assignment/cleanup endpoints are super_admin-only
+- [x] Registration hardened: anonymous signups are forced to role `partner` (only super_admin creates staff; first-ever account may bootstrap super_admin); registering with a new `partner_id` get-or-creates the Partner row
+- [x] Frontend JWT login (Jul 05): login screen accepts email → `POST /auth/login`, stores `pd_token`, and a global fetch interceptor (`frontend/src/auth.js`) sends the Bearer header on every API call. First-run bootstrap: when the users table is empty the login screen offers super_admin creation (`GET /auth/bootstrap-needed`). Legacy client-ID gate (`101` / env creds) kept as fallback until all accounts are migrated.
+- [x] `/api/v1/admin/users` endpoints added (GET/POST/DELETE, always super_admin-JWT, no anonymous mode) — the Partners tab called these since before the backend existed; it 404'd until now. Delete = soft-deactivate (login blocked, history preserved); self-deactivation blocked.
+- [ ] **Flip `AUTH_ENFORCE=true`** (env) after deploying and creating real accounts for everyone — the legacy client-ID gate sends no JWT, so flipping the flag retires it. Until then anonymous calls stay unscoped exactly as before Phase 1.
 
 ---
+
+### 21. NEW — Masked Customer↔Technician Chat Relay
+**Status: Models + regex masking layer built (Jul 05). NOT production-safe yet — read the gaps below before enabling.**
+
+- [x] `chat_threads`, `chat_messages`, `pii_block_audit` tables (migration 0001)
+- [x] `pipeline/pii_mask.py` — regex layer: Indian phone (digit + spelled-out), email, UPI handles, social handles
+- [x] **Relay API built (Jul 05)** — `/api/v1/chat/*` (threads + messages). The backend is now the masking authority and system of record: n8n POSTs each message and relays only what the response says (`relay` + `masked_text`), never the original. Auth: `X-Relay-Key` shared secret (set `CHAT_RELAY_API_KEY`) or super_admin JWT. **Ships dark**: `CHAT_RELAY_ENABLED=false` → POST endpoints 503 until the checklist below is done.
+- [x] **LLM second pass built** — `llm_second_pass()` in pii_mask.py, strict Claude classifier (needs `ANTHROPIC_API_KEY`, model via `PII_LLM_MODEL`). Runs on every regex-clean message. **Fail-closed**: if the classifier flags the message, can't run, or answers ambiguously, the message is withheld — never relayed unverified.
+- [x] `raw_text` access enforced in code: message reads return masked text only; `raw_text` appears only for a super_admin JWT (audit categories in `pii_block_audit`, never raw matches)
+- [ ] **Image/voice note handling — NOT built.** A phone number written on paper and photographed, or read aloud in a voice note, has no text for the mask to see. n8n must BLOCK media messages outright until OCR + speech-to-text pre-processing exists. This is the reason `CHAT_RELAY_ENABLED` stays false.
+- [ ] n8n workflow wiring: AiSensy webhook → `POST /api/v1/chat/threads/{id}/messages` (with X-Relay-Key) → relay `masked_text` to Google Chat space per job, and reverse path. Media messages: reject with a canned reply.
+- [ ] Masking runs server-side (backend/n8n) — explicitly NOT in the local Hermes/OpenClaw PC agent, which is a single point of failure and out of the trust boundary for anything customer-facing
+
+
 
 ## 🟡 HIGH — Core Product Completeness
 
 ### 4. Admin Message Panel
-- View all unread partner messages across all orders in one place
-- Reply from admin dashboard
-- Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
-- Unread/read state synced with backend
+- [x] Backend (Jul 05): `GET /api/v1/farm/comments/overview` — every order with comments, unread count for the caller, latest message, newest-first; partner-scoped tokens see only their own orders
+- [ ] Frontend panel: render the overview in the admin dashboard, reply inline (POST comment endpoint already exists)
+- [ ] Notification to admin on new message (email via Resend, or WhatsApp via AiSensy)
+- [x] Unread/read state synced with backend (per-comment `read_by` + mark-read endpoint, Phase 1)
 
 ### 5. Photo Storage — Cloudflare R2
 - Current: base64 in JSONL bloats file size (~100KB per photo)
@@ -236,8 +251,9 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 
 | Issue | Impact | Fix |
 |-------|--------|-----|
-| base64 photos in JSONL | File bloat, slow | Cloudflare R2 |
-| In-memory + JSONL store | Data loss on restart | PostgreSQL |
-| Hardcoded session auth | No real RBAC | JWT + role claims |
+| base64 photos in order docs | Row bloat, slow | Cloudflare R2 |
+| ~~In-memory + JSONL store~~ | ~~Data loss on restart~~ | ✅ PostgreSQL (Phase 1) |
+| ~~Hardcoded session auth~~ | ~~No real RBAC~~ | ✅ JWT + role claims (enforce via AUTH_ENFORCE once frontend migrated) |
 | Shopify webhooks not registered | No orders arrive | Manual registration |
-| `orders.jsonl` full-rewrite on each update | Race conditions at scale | DB transactions |
+| ~~`orders.jsonl` full-rewrite on each update~~ | ~~Race conditions at scale~~ | ✅ DB transactions (Phase 1) |
+| Frontend login still legacy sessionStorage gate | Anonymous API calls stay unscoped | Wire Dashboard.jsx to /auth/login, send Bearer everywhere, flip AUTH_ENFORCE=true |

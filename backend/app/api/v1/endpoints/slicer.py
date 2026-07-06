@@ -71,7 +71,7 @@ async def slice_model(
         stl_path = str(MAKER_AI_DIR / "spec" / "gridfinity_bin.stl")
         uploaded = False
 
-    return _do_slice(stl_path, material, machine, process, layerHeight, infillDensity,
+    return await _do_slice(stl_path, material, machine, process, layerHeight, infillDensity,
                      infillPattern, walls, topLayers, bottomLayers, supportType,
                      supportThreshold, printSpeed, travelSpeed, nozzleTemp, bedTemp,
                      uploaded=uploaded)
@@ -81,13 +81,13 @@ async def slice_model(
 async def slice_model_json(req: SliceRequest):
     """Handle application/json requests from the dashboard slicer."""
     stl = req.stl_path or str(MAKER_AI_DIR / "spec" / "gridfinity_bin.stl")
-    return _do_slice(stl, req.material, req.machine, req.process, req.layerHeight,
+    return await _do_slice(stl, req.material, req.machine, req.process, req.layerHeight,
                      req.infillDensity, req.infillPattern, req.walls, req.topLayers,
                      req.bottomLayers, req.supportType, req.supportThreshold,
                      req.printSpeed, req.travelSpeed, req.nozzleTemp, req.bedTemp)
 
 
-def _do_slice(stl_path, material, machine, process, layer_height, infill_density,
+async def _do_slice(stl_path, material, machine, process, layer_height, infill_density,
               infill_pattern, walls, top_layers, bottom_layers, support_type,
               support_threshold, print_speed, travel_speed, nozzle_temp, bed_temp,
               uploaded=False):
@@ -147,6 +147,6 @@ def _do_slice(stl_path, material, machine, process, layer_height, infill_density
             q = build_quote(weight_g=weight, print_time_min=time_min,
                             material=material, machine=machine, source="gcode")
             payload["quote"] = q.to_dict()
-        farm_store.add_feedback(payload)
+        await farm_store.add_feedback(payload)
 
     return payload

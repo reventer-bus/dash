@@ -1,6 +1,12 @@
-from sqlalchemy import Column, String, Float, Integer, Enum, ForeignKey
-from sqlalchemy.orm import relationship
-from app.core.database import Base
+"""
+Printer document model (Phase 1 — farm_store DB rewire).
+
+Same pattern as Order: the public printer dict lives in `data`, connection
+secrets (Bambu access code, OctoPrint API key, host) live in `connection`
+so they are never returned by the general read paths.
+"""
+from sqlalchemy import Column, String
+from app.core.database import Base, JsonDoc
 import enum
 
 
@@ -16,13 +22,8 @@ class Printer(Base):
     __tablename__ = "printers"
 
     id = Column(String, primary_key=True)
-    name = Column(String, nullable=False)
-    status = Column(Enum(PrinterStatus), default=PrinterStatus.offline)
-    material_type = Column(String, default="PLA")
-    ai_health_score = Column(Float, default=100.0)
-    total_print_hours = Column(Float, default=0.0)
-    partner_id = Column(String, ForeignKey("partners.id"), nullable=False)
-    camera_url = Column(String)
-
-    partner = relationship("Partner", back_populates="printers")
-    jobs = relationship("PrintJob", back_populates="printer")
+    name = Column(String, nullable=True)
+    status = Column(String, nullable=False, default="idle")
+    partner_id = Column(String, nullable=True, index=True)      # future: printer→franchise ownership
+    data = Column(JsonDoc, nullable=False, default=dict)        # public printer dict (no secrets)
+    connection = Column(JsonDoc, nullable=False, default=dict)  # connection_type/host/serial/access_code/api_key

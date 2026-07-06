@@ -7,6 +7,10 @@ class Settings(BaseSettings):
     REDIS_URL: str = "redis://localhost:6379"
     SECRET_KEY: str = "dev-secret-change-in-production"
     ACCESS_TOKEN_EXPIRE_MINUTES: int = 1440
+    # When true, farm endpoints reject anonymous requests instead of
+    # serving them unscoped (legacy dashboard compat). Flip once the
+    # deployed frontend sends a JWT on every request.
+    AUTH_ENFORCE: bool = False
 
     MINIO_ENDPOINT: str = "localhost:9000"
     MINIO_ACCESS_KEY: str = "makerai"
@@ -18,6 +22,17 @@ class Settings(BaseSettings):
     OCTOPRINT_API_KEY: str = ""
 
     ENVIRONMENT: str = "development"
+
+    # Masked customer<->technician chat relay (PLAN.md #21)
+    # Disabled by default: image/voice PII handling is not built yet, so the
+    # relay must not be customer-facing. Flip only per the PLAN #21 checklist.
+    CHAT_RELAY_ENABLED: bool = False
+    # Shared secret for n8n -> relay endpoints (X-Relay-Key header).
+    CHAT_RELAY_API_KEY: str = ""
+    # Claude API key for the PII second-pass classifier. Without it,
+    # regex-clean messages are withheld (fail-closed), not relayed.
+    ANTHROPIC_API_KEY: str = ""
+    PII_LLM_MODEL: str = "claude-haiku-4-5-20251001"
 
     # Shopify integration
     SHOPIFY_DOMAIN: str = Field(default="store.fofus.in")

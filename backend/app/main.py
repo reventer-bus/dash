@@ -1,8 +1,11 @@
 from contextlib import asynccontextmanager
+from pathlib import Path
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 
-from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify, admin_users, chat
+from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify, admin_users, chat, intake, orderflow, camera, bridge
 from app.services import farm_store
 
 
@@ -64,35 +67,61 @@ app.include_router(pricing.router, prefix="/api/v1/pricing", tags=["pricing"])
 # Shopify — checkout + webhook
 app.include_router(shopify.router, prefix="/api/v1/shopify", tags=["shopify"])
 
+# Product intake — worker submissions
+app.include_router(intake.router, prefix="/api/v1/products", tags=["product-intake"])
+
+# Order-to-cash flow — quote → order → payment → print
+app.include_router(orderflow.router, prefix="/api/v1/orders", tags=["order-flow"])
+app.include_router(camera.router, prefix="/api/v1/cameras", tags=["cameras"])
+
+# Bridge — local laptop bridge service pushes printer status, pulls commands
+app.include_router(bridge.router, prefix="/api/v1/bridge", tags=["bridge"])
+
+# Static files — worker intake form
+STATIC_DIR = Path(__file__).parent / "static"
+if STATIC_DIR.exists():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
+
+
+@app.get("/intake")
+async def intake_form():
+    """Worker product submission form."""
+    form_path = STATIC_DIR / "intake.html"
+    if form_path.exists():
+        return FileResponse(str(form_path), media_type="text/html")
+    return {"error": "Form not found"}
+
 
 @app.get("/health")
 async def health():
     return {"status": "ok", "service": "Maker AI API", "business": "fofus.in"}
 
 
-@app.get("/")
-async def root():
-    return {
-        "service": "Maker AI API",
-        "version": "0.1.0",
-        "business": "fofus.in",
-        "docs": "/docs",
-        "openapi": "/openapi.json",
-        "endpoints": [
-            "GET  /health",
-            "GET  /api/v1/pricing/rates",
-            "POST /api/v1/pricing/calculate",
-            "GET  /api/v1/farm/status",
-            "GET  /api/v1/farm/queue",
-            "GET  /api/v1/farm/partners",
-            "POST /api/v1/farm/orders/{order_id}/assign-partner",
-            "GET  /api/v1/farm/orders/by-partner/{partner_id}",
-            "POST /api/v1/farm/orders/{order_id}/shopify-push",
-            "PATCH /api/v1/farm/orders/{order_id}",
-            "POST /api/v1/auth/register",
-            "POST /api/v1/auth/login",
-            "GET  /api/v1/auth/me   (requires JWT)",
-            "POST /api/v1/shopify/checkout",
-            "POST /api/v1/shopify/webhook",
-        ],
-    }
+# ── Serve frontend (PrintDash dashboard) ─────────────────────────────────────
+FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+if FRONTEND_DIR.exists():
+    app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
+
+    @app.get("/")
+    async def serve_dashboard():
+        return FileResponse(str(FRONTEND_DIR / "index.html"), media_type="text/html")
+
+    @app.get("/{full_path:path}")
+    async def spa_catch_all(full_path: str):
+        """SPA fallback: serve index.html for any non-API route."""
+        if full_path.startswith("api/") or full_path in ("health", "docs", "openapi.json", "redoc"):
+            return {"error": "Not found"}
+        fp = FRONTEND_DIR / full_path
+        if fp.is_file():
+            return FileResponse(str(fp))
+        return FileResponse(str(FRONTEND_DIR / "index.html"), media_type="text/html")
+else:
+    @app.get("/")
+    async def root():
+        return {
+            "service": "Maker AI API",
+            "version": "0.1.0",
+            "business": "fofus.in",
+            "docs": "/docs",
+            "endpoints": ["GET /api/v1/farm/status", "GET /api/v1/printers/"],
+        }

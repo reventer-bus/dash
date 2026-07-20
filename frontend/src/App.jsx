@@ -12,7 +12,7 @@ const CREDENTIALS = {
 }
 
 const SESSION_KEY = 'pd_authed'
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL ?? ''
 
 const inputStyle = {
   width: '100%', background: '#0d0d0d', border: '1px solid rgba(255,255,255,0.07)',

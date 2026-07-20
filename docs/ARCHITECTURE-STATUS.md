@@ -153,7 +153,9 @@ Legend: ✅ done · 🟡 partly done · 🔴 not started · 😴 dormant (code i
 | Live telemetry endpoints (`/live`) | 😴 | Same |
 | Printer pause/resume/stop | 😴 | Same |
 | Printer registration UI | 😴 | Backend ready, frontend not built |
-| **Multi-Pi federation** | 🔴 | Design in `multi-pi-federation.md`, awaiting sign-off on 5 decisions |
+|| **Multi-Pi federation** | 🔴 | Design in `multi-pi-federation.md`, awaiting sign-off on 5 decisions |
+| **Bambuddy integration (PrintDash)** | ✅ | Docker container port 8000, 548 endpoints. 5 printers registered (AGNI-01/02, Devi, Jarvis-1, Mark1). Filament catalog, maintenance, Telegram alerts, GitHub backup, Obico AI. See PLAN.md Bambuddy section. |
+| **Printer Farm Watchdog** | ✅ NEW | `dash/scripts/printer-farm-watchdog.py` — user systemd service. Monitors HP laptop (100.81.41.62) every 30s via Tailscale ping. Auto-reconnects all 5 printers when laptop comes online. Logs offline periods to `dash/logs/printer-farm-offline.log`. Telegram alerts on transitions. Health check every 5min reconnects dropped printers. Linger enabled for boot-start. |
 
 ### 2.6 · Order card features (next 90 days, see [PLAN.md §2](./PLAN.md))
 

@@ -1120,3 +1120,64 @@ async def cleanup_test_data(dry_run: bool = False, _admin: Optional[User] = Depe
         "kept_ids": keep,
         "at": datetime.now(timezone.utc).isoformat(),
     }
+
+
+# ── AI Vision Detection Alerts ────────────────────────────────────────────────
+
+class DetectionAlertPayload(BaseModel):
+    printer_name: str
+    severity: str = "warning"  # info | warning | critical
+    category: str = "other_print_issue"
+    # initial_layer | layer_issue | nozzle_clog | nozzle_malfunction |
+    # air_printing | other_print_issue
+    message: str
+    image_path: Optional[str] = None
+    confidence: float = 0.0
+
+
+@router.post("/detections")
+async def add_detection(payload: DetectionAlertPayload):
+    """Receive an AI vision detection alert from the vision monitor.
+
+    No JWT — this is a machine-to-machine endpoint (the vision monitor
+    runs on the PC and posts alerts here).
+    """
+    alert = farm_store.add_detection_alert(payload.model_dump())
+    return {"ok": True, "alert": alert}
+
+
+@router.get("/detections")
+async def list_detections(
+    printer_name: Optional[str] = None,
+    acknowledged: Optional[bool] = None,
+    limit: int = 50,
+):
+    """List AI vision detection alerts, newest first."""
+    alerts = farm_store.list_detection_alerts(
+        printer_name=printer_name,
+        acknowledged=acknowledged,
+        limit=limit,
+    )
+    unack = sum(1 for a in alerts if not a["acknowledged"])
+    return {
+        "ok": True,
+        "alerts": alerts,
+        "count": len(alerts),
+        "unacknowledged": unack,
+    }
+
+
+@router.post("/detections/{alert_id}/acknowledge")
+async def acknowledge_detection_alert(alert_id: str):
+    """Mark a detection alert as acknowledged."""
+    result = farm_store.acknowledge_detection(alert_id)
+    if result is None:
+        return {"ok": False, "error": "Alert not found"}
+    return {"ok": True, "alert": result}
+
+
+@router.delete("/detections")
+async def clear_detections(printer_name: Optional[str] = None):
+    """Clear detection alerts, optionally for a specific printer."""
+    count = farm_store.clear_detection_alerts(printer_name)
+    return {"ok": True, "cleared": count}

@@ -1,0 +1,47 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="512" height="512" viewBox="0 0 512 512" fill="none">
+  <!-- PrintDash Logo — 3D printer + lightning dash = speed + printing -->
+
+  <!-- Background circle -->
+  <circle cx="256" cy="256" r="240" fill="#0a0a0f"/>
+
+  <!-- Outer ring -->
+  <circle cx="256" cy="256" r="230" stroke="#00d4ff" stroke-width="3" fill="none" opacity="0.3"/>
+  <circle cx="256" cy="256" r="220" stroke="#00d4ff" stroke-width="1" fill="none" opacity="0.15"/>
+
+  <!-- 3D Printer frame (simplified) -->
+  <rect x="140" y="110" width="232" height="292" rx="16" fill="#1a1a2e" stroke="#00d4ff" stroke-width="4"/>
+
+  <!-- Top bar (gantry) -->
+  <rect x="150" y="120" width="212" height="12" rx="4" fill="#00d4ff" opacity="0.8"/>
+
+  <!-- Print bed -->
+  <rect x="160" y="340" width="192" height="50" rx="8" fill="#16213e" stroke="#00d4ff" stroke-width="2" opacity="0.6"/>
+
+  <!-- Print head -->
+  <rect x="210" y="140" width="92" height="28" rx="6" fill="#00d4ff" opacity="0.9"/>
+  <!-- Nozzle -->
+  <polygon points="250,168 262,168 256,185" fill="#00d4ff"/>
+
+  <!-- Printed object (cube layers) -->
+  <rect x="222" y="295" width="68" height="45" fill="#00d4ff" opacity="0.15"/>
+  <rect x="228" y="300" width="56" height="35" fill="#00d4ff" opacity="0.25"/>
+  <rect x="234" y="310" width="44" height="25" fill="#00d4ff" opacity="0.35"/>
+  <rect x="240" y="318" width="32" height="17" fill="#00d4ff" opacity="0.5"/>
+
+  <!-- Lightning dash (speed motif) -->
+  <path d="M 330 80 L 310 140 L 340 140 L 300 220 L 360 120 L 330 120 L 370 80 Z"
+        fill="#00d4ff" opacity="0.9"
+        filter="drop-shadow(0 0 8px #00d4ff)"/>
+
+  <!-- "PrintDash" text -->
+  <text x="256" y="440" text-anchor="middle" fill="#00d4ff" font-family="Inter, Arial, sans-serif"
+        font-size="48" font-weight="700" letter-spacing="2">
+    Print<tspan fill="#ffffff">Dash</tspan>
+  </text>
+
+  <!-- FOFUS tagline -->
+  <text x="256" y="465" text-anchor="middle" fill="#666" font-family="Inter, Arial, sans-serif"
+        font-size="14" font-weight="400" letter-spacing="3">
+    FOFUS PRINT FARM
+  </text>
+</svg>

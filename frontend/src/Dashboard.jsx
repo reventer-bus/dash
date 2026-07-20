@@ -3,7 +3,7 @@ import { useState, useEffect, useCallback, useRef, createContext, useContext } f
 const ThemeCtx = createContext(null)
 const useT = () => useContext(ThemeCtx)
 
-const API = import.meta.env.VITE_API_URL || 'http://localhost:8000'
+const API = import.meta.env.VITE_API_URL ?? ''
 
 const STATUS_COLOR = {
   printing: '#00cc66', idle: '#4a9eff', paused: '#ff9800',
@@ -141,6 +141,83 @@ function StatCard({ label, value, sub, color = '#fff', icon, alert }) {
 
 // ─── Printer Card ──────────────────────────────────────────────────────────────
 
+
+function CameraFeed({ printerName, theme }) {
+  const [show, setShow] = useState(false)
+  const [src, setSrc] = useState(null)
+  const [status, setStatus] = useState(null)
+
+  useEffect(() => {
+    if (!show) return
+    const API = (import.meta.env.VITE_API_URL || "http://localhost:4322")
+    let timer
+
+    const checkAndFetch = async () => {
+      try {
+        const r = await fetch(API + "/api/v1/cameras/")
+        const data = await r.json()
+        const cam = (data.cameras || []).find(c => c.name === printerName)
+        if (cam && cam.has_frame) {
+          setStatus("live")
+          setSrc(API + "/api/v1/cameras/" + printerName + "?t=" + Date.now())
+        } else if (cam) {
+          setStatus("waiting")
+        } else {
+          setStatus("offline")
+        }
+      } catch {
+        setStatus("offline")
+      }
+    }
+
+    checkAndFetch()
+    timer = setInterval(checkAndFetch, 2000)
+    return () => clearInterval(timer)
+  }, [show, printerName])
+
+  if (!show) {
+    return (
+      <button onClick={() => setShow(true)} style={{
+        width: "100%", marginTop: 8, padding: "4px 8px", fontSize: 9,
+        background: "transparent", border: "1px solid " + (theme?.border ?? "#222"),
+        color: theme?.textDim ?? "#555", borderRadius: 4, cursor: "pointer"
+      }}>📷 Show Camera</button>
+    )
+  }
+
+  return (
+    <div style={{ marginTop: 8, position: "relative" }}>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center", marginBottom: 4 }}>
+        <span style={{ fontSize: 8, color: theme?.textDim ?? "#555", textTransform: "uppercase", letterSpacing: "0.08em" }}>📷 Camera</span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {status === "live" && <span style={{ fontSize: 7, color: "#00cc66" }}>● LIVE</span>}
+          {status === "waiting" && <span style={{ fontSize: 7, color: "#ff9800" }}>○ WAITING</span>}
+          {status === "offline" && <span style={{ fontSize: 7, color: "#ff4444" }}>✕ OFFLINE</span>}
+          <button onClick={() => setShow(false)} style={{
+            fontSize: 8, padding: "1px 5px", background: "transparent",
+            border: "none", color: theme?.textDim ?? "#555", cursor: "pointer"
+          }}>hide</button>
+        </div>
+      </div>
+      {status === "live" && src ? (
+        <img src={src} alt={printerName + " camera"} style={{
+          width: "100%", borderRadius: 6, display: "block",
+          border: "1px solid " + (theme?.border ?? "#222")
+        }} />
+      ) : (
+        <div style={{
+          width: "100%", aspectRatio: "4/3", borderRadius: 6,
+          background: theme?.sectionBg ?? "rgba(0,0,0,0.3)",
+          display: "flex", alignItems: "center", justifyContent: "center",
+          fontSize: 9, color: theme?.textDim ?? "#444", border: "1px solid " + (theme?.border ?? "#222")
+        }}>
+          {status === "offline" ? "No camera" : "Connecting..."}
+        </div>
+      )}
+    </div>
+  )
+}
+
 function PrinterCard({ printer, onAction, onLivePoll, connType }) {
   const T = useT()
   const color = STATUS_COLOR[printer.status] || '#555'
@@ -212,6 +289,7 @@ function PrinterCard({ printer, onAction, onLivePoll, connType }) {
           ETA {printer.eta_minutes}min
         </div>
       )}
+      <CameraFeed printerName={printer.name} theme={T} />
     </div>
   )
 }
@@ -1584,6 +1662,130 @@ function AnalyticsPanel({ data, T }) {
   )
 }
 
+// ─── AI Vision Detection Alerts Panel ────────────────────────────────────────
+
+const CATEGORY_LABELS = {
+  initial_layer: 'Initial Layer',
+  layer_issue: 'Layer Issue',
+  nozzle_clog: 'Nozzle Clog',
+  nozzle_malfunction: 'Nozzle Malfunction',
+  air_printing: 'Air Printing',
+  other_print_issue: 'Print Issue',
+}
+
+const SEVERITY_COLORS = {
+  critical: '#ff4444',
+  warning: '#ff9800',
+  info: '#2196f3',
+}
+
+function DetectionAlertsPanel({ darkMode }) {
+  const [alerts, setAlerts] = useState([])
+  const [loading, setLoading] = useState(true)
+  const API = import.meta.env.VITE_API_URL ?? ''
+
+  const fetchAlerts = async () => {
+    try {
+      const r = await fetch(`${API}/api/v1/farm/detections?limit=20`)
+      if (r.ok) {
+        const data = await r.json()
+        setAlerts(data.alerts || [])
+      }
+    } catch (e) { /* silent */ }
+    finally { setLoading(false) }
+  }
+
+  useEffect(() => {
+    fetchAlerts()
+    const interval = setInterval(fetchAlerts, 10000)
+    return () => clearInterval(interval)
+  }, [])
+
+  const ackAlert = async (id) => {
+    try {
+      await fetch(`${API}/api/v1/farm/detections/${id}/acknowledge`, { method: 'POST' })
+      fetchAlerts()
+    } catch (e) { /* silent */ }
+  }
+
+  const unack = alerts.filter(a => !a.acknowledged)
+  const T = darkMode ? { bg: '#0d0d0d', text: '#e0e0e0', dim: '#666', border: 'rgba(255,255,255,0.07)' }
+                    : { bg: '#fff', text: '#111', dim: '#888', border: 'rgba(0,0,0,0.08)' }
+
+  return (
+    <div style={{
+      background: T.bg, border: `1px solid ${T.border}`, borderRadius: 10, padding: 16,
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontSize: 16 }}>🔍</span>
+          <span style={{ fontSize: 12, fontWeight: 700, color: T.text, textTransform: 'uppercase', letterSpacing: '0.05em' }}>
+            AI Vision Alerts
+          </span>
+          {unack.length > 0 && (
+            <span style={{
+              background: SEVERITY_COLORS.critical, color: '#fff', fontSize: 10,
+              fontWeight: 800, padding: '2px 8px', borderRadius: 10,
+            }}>{unack.length}</span>
+          )}
+        </div>
+        <button onClick={fetchAlerts} style={{
+          background: 'transparent', border: 'none', color: T.dim,
+          fontSize: 11, cursor: 'pointer',
+        }}>↻</button>
+      </div>
+
+      {loading ? (
+        <div style={{ fontSize: 11, color: T.dim, textAlign: 'center', padding: 20 }}>Loading…</div>
+      ) : alerts.length === 0 ? (
+        <div style={{ fontSize: 11, color: T.dim, textAlign: 'center', padding: 20 }}>
+          ✅ No print defects detected
+        </div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          {alerts.slice(0, 8).map(a => (
+            <div key={a.id} style={{
+              border: `1px solid ${a.acknowledged ? T.border : SEVERITY_COLORS[a.severity] || SEVERITY_COLORS.warning}40`,
+              borderRadius: 6, padding: 10,
+              background: a.acknowledged ? 'transparent' : `${SEVERITY_COLORS[a.severity] || SEVERITY_COLORS.warning}08`,
+              opacity: a.acknowledged ? 0.5 : 1,
+            }}>
+              <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'flex-start' }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ display: 'flex', gap: 6, alignItems: 'center', marginBottom: 4 }}>
+                    <span style={{
+                      fontSize: 9, fontWeight: 800, textTransform: 'uppercase',
+                      color: SEVERITY_COLORS[a.severity] || SEVERITY_COLORS.warning,
+                      letterSpacing: '0.05em',
+                    }}>{a.severity}</span>
+                    <span style={{
+                      fontSize: 10, fontWeight: 600, color: T.text,
+                      background: `${SEVERITY_COLORS[a.severity] || SEVERITY_COLORS.warning}15`,
+                      padding: '1px 6px', borderRadius: 4,
+                    }}>{CATEGORY_LABELS[a.category] || a.category}</span>
+                    <span style={{ fontSize: 10, color: T.dim }}>{a.printer_name}</span>
+                  </div>
+                  <div style={{ fontSize: 11, color: T.text, lineHeight: 1.4 }}>{a.message}</div>
+                  <div style={{ fontSize: 9, color: T.dim, marginTop: 4 }}>
+                    {new Date(a.created_at).toLocaleTimeString()} · {Math.round(a.confidence * 100)}% confidence
+                  </div>
+                </div>
+                {!a.acknowledged && (
+                  <button onClick={() => ackAlert(a.id)} style={{
+                    background: 'transparent', border: `1px solid ${T.border}`,
+                    color: T.dim, fontSize: 9, padding: '3px 8px', borderRadius: 4,
+                    cursor: 'pointer', whiteSpace: 'nowrap',
+                  }}>Ack</button>
+                )}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
+
 // ─── Main Dashboard ───────────────────────────────────────────────────────────
 
 export default function Dashboard({ darkMode = false, authUser, onLogout, partnerScopeOnly, adminMode }) {
@@ -2247,7 +2449,8 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
       <div style={{ display: 'flex', alignItems: 'flex-start', justifyContent: 'space-between', marginBottom: 20 }}>
         <div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
-            <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em', color: '#00cc66' }}>printdash</span>
+            <img src="/printdash-logo.svg" alt="PrintDash" style={{ width: 28, height: 28 }} />
+            <span style={{ fontSize: 17, fontWeight: 800, letterSpacing: '-0.02em', color: '#00d4ff' }}>Print<tspan style={{ color: '#fff' }}>Dash</tspan></span>
             <span style={{ fontSize: 10, color: T.textFaint }}>by fofus.in</span>
           </div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
@@ -2302,6 +2505,9 @@ export default function Dashboard({ darkMode = false, authUser, onLogout, partne
               ? <EmptyState icon="⬡" title="No printers registered" hint="Go to Printers tab → Connect New Printer\nto add a Bambu, Klipper, or OctoPrint printer" />
               : printers.map(p => <PrinterCard key={p.id} printer={p} onAction={printerAction} onLivePoll={livePoll} connType={p.connection_type} />)
             }
+            <div style={{ marginTop: 20 }}>
+              <DetectionAlertsPanel darkMode={darkMode} />
+            </div>
           </div>
           <div>
             <SectionHead>Recent Activity</SectionHead>

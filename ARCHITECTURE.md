@@ -63,6 +63,9 @@ dash/
 ├── pipeline/          ← n8n workflow specs (JSON)
 │   └── farm_intake_workflow.json
 │
+├── scripts/           ← Operational scripts
+│   └── git_backup_intake.sh  ← Cron safety net: push uncommitted submissions to GitHub every 10 min
+│
 ├── pi/                ← (PLANNED) Raspberry Pi node agent setup
 │   ├── setup-pi.sh
 │   ├── docker-compose.yml
@@ -90,6 +93,55 @@ dash/
 | Customer tracking | Vercel | `track.fofus.in` | 🔲 Not built |
 | Database | PostgreSQL | Railway or Ubuntu Docker | ⚠️ Needed |
 | Mesh VPN | Tailscale | `fofus-mesh` tailnet | 🔲 Set up for backend; Pi nodes TBD |
+| FOFUS Portal | Ubuntu + Tailscale Funnel | `localhost:4321` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/` | ✅ Live (Jul 20, rebranded as FOFUS) |
+| Bambuddy (FOFUS printer control) | Docker | `localhost:8000` | ✅ Live (Jul 20, rebranded as FOFUS) |
+| GitHub backup | GitHub | `reventer-bus/bambuddy-backup` (private) | ✅ Live (Jul 18, daily schedule) |
+| Local backup | Disk | `bambuddy-backup-*.zip` | ✅ Live (Jul 18, daily 03:00) |
+| Telegram notifications | Bambuddy→Telegram | chat 1507272535 | ✅ Live (Jul 18) |
+| Obico AI monitoring | Bambuddy built-in | medium sensitivity, notify | ✅ Enabled (Jul 18) |
+| PrintDash→Bambuddy bridge | Cron | `*/5 * * * *` → `dash/scripts/printdash-bambuddy-bridge.py` | ✅ Live (Jul 18) |
+| PrintDash Health Check | Cron | every 30min → `dash/scripts/printdash-health-check.py` | ✅ Live (Jul 18) |
+| Franchise onboarding | Script | `dash/scripts/franchise-onboard.py` | ✅ Live (Jul 18) |
+| Franchise printer map | JSON | `dash/scripts/franchise-printer-map.json` | ✅ 1 franchise (101-3Ddevine) |
+
+### Bambuddy/FOFUS Integration (Jul 18, rebranded Jul 20)
+
+```
+FOFUS Stack:
+  Portal (4321) → unifies Dashboard (4322) + Printer Control (8000)
+  Backend (4322) → FastAPI, Shopify webhooks, order pipeline
+  Bambuddy/FOFUS (8000) → Docker, printer control, filament, maintenance, notifications
+
+Bambuddy Activated Features:
+  ├── Filament catalog (9 defaults: PLA, PETG, ABS, ASA, TPU — ₹/kg pricing)
+  ├── Maintenance schedules (9 types × 2 printers: belts, rods, nozzle, PTFE, lubrication)
+  ├── Telegram notifications (print start/complete/fail, maintenance, filament alerts)
+  ├── Obico AI monitoring (medium sensitivity, notify action)
+  ├── Local backup (daily 03:00, retention 7 days)
+  ├── GitHub backup (daily, reventer-bus/bambuddy-backup, tested OK)
+  ├── Projects (4: Custom Prints, Product Line, Scanning, Prototyping)
+  ├── Settings: INR currency, ₹8/kWh energy cost, low-stock alerts
+  └── Printers: AGNI-01 (ID 1), AGNI-02 (ID 2) — AGNI-03/04 pending (offline)
+
+Franchise Architecture (Phase 4, Jul 18):
+  PrintDash:
+    ├── Partner model (id, slug, name, franchise_admin_email, active)
+    ├── User roles: super_admin | franchise_admin | partner | technician | artist | space_manager
+    ├── Scoped queries: franchise_admin/technician/artist/space_manager → filtered by partner_id
+    └── Partner 101: 3D Devine (Thrissur) — admin@3ddevine.com
+  Bambuddy:
+    ├── Groups: per-franchise Ops (25 perms) + Viewer (12 perms)
+    ├── API Keys: per-franchise key linked to group
+    └── Franchise-101-3Ddevine: ops group ID=6, viewer ID=7, user 3ddevine_admin
+  Bridge:
+    ├── franchise-printer-map.json: maps franchise printer IDs → Bambuddy IDs
+    └── Onboarding: franchise-onboard.py creates all records in one command
+
+Bridge Script (printdash-bambuddy-bridge.py):
+  Polls PrintDash for PRINTING orders → downloads 3MF → uploads to Bambuddy
+  → creates queue item → starts print → updates PrintDash order status
+  Idempotent (state file tracks processed orders), Telegram alerts on failure
+```
 
 ### Backend Hosting (Ubuntu + Tailscale Funnel)
 
@@ -344,6 +396,24 @@ Partner uploads photo → POST /api/v1/farm/orders/{id}/photos (multipart)
 
 ---
 
+## Data Flow — Worker Product Intake
+
+```
+1. Worker fills form at https://reventer-...ts.net/intake
+   (product name, category, description, price, 3MF/STL file, optional photos)
+2. POST /api/v1/products/intake → saves files to data/intake/{timestamp}/
+3. metadata.json written with all form fields + file paths
+4. Farm queue item created as NEW (awaiting owner review)
+5. _git_backup() runs: git add → commit → push to GitHub
+   → repo: reventer-bus/fofus-worker-submissions (private)
+   → every submission is a commit, instantly on GitHub
+6. Safety cron (every 10 min) catches any missed pushes
+```
+
+**Why GitHub:** Power loss, disk failure, or container restart won't lose worker work. GitHub is the source of truth; local disk is the working copy.
+
+---
+
 ## Data Persistence
 
 **Current (in-memory + JSONL on Ubuntu):**
@@ -504,6 +574,7 @@ TERRITORY_PINCODES      680121,680122,680123
 | HIGH | Admin message panel | Reply to partner messages, notification |
 | HIGH | Photo storage | Cloudflare R2 instead of base64 |
 | HIGH | Pi node setup | FDM Monster, FilaOps, Bambu bridge, heartbeat |
+| ✅ DONE | Worker submission backup | GitHub repo `fofus-worker-submissions`, auto-push on intake + 10-min safety cron |
 | MED | n8n workflows | Shopify→AI→slicer→job, WhatsApp→order, dispatch→notify |
 | MED | Customer track page | `track.fofus.in/{order_id}` |
 | MED | Auto-fulfillment | DISPATCH → auto Shopify push |
@@ -515,3 +586,94 @@ TERRITORY_PINCODES      680121,680122,680123
 | LOW | AI failure detection | Camera → CV model, auto-pause |
 | LOW | Mobile view | Responsive layout |
 | LOW | WhatsApp alerts | New order → partner WhatsApp |
+
+---
+
+## Print Farm Replicator (`~/printfarm-replicator/`)
+
+Full 3-tier replication package — rebuild the entire print farm from bare metal.
+
+### Structure
+
+```
+printfarm-replicator/
+├── README.md              ← 3-tier overview + quick start (10-step)
+├── ARCHITECTURE.md        ← Full topology, service inventory, data flows, failover
+├── BOM.md                 ← Hardware bill of materials + cost estimates
+├── pc/
+│   ├── setup-pc.sh        ← One-shot PC provisioning (Docker, Python, Tailscale, UFW)
+│   ├── docker-compose.yml ← Full stack: postgres, redis, qdrant, minio, n8n, frontend
+│   └── .env.example       ← PC environment variables
+├── laptop/
+│   ├── setup-laptop.sh    ← One-shot laptop provisioning (Mosquitto, Ollama, systemd)
+│   ├── .env.example       ← Laptop environment variables
+│   ├── jusprint.py        ← Actual service script (from running laptop)
+│   ├── bambu_camera_service.py
+│   ├── bambu_mqtt_forwarder.py
+│   ├── ai_printer_monitor.py
+│   └── printer_personas.py
+├── configs/
+│   ├── systemd/service-templates.conf  ← All 5 laptop systemd units
+│   ├── mosquitto/mosquitto.conf        ← MQTT broker config
+│   ├── nginx/printdash-nginx.conf      ← Reverse proxy config
+│   └── tailscale/tailscale-setup.sh    ← Mesh VPN + Funnel setup
+├── scripts/
+│   └── verify-farm.sh     ← Cross-tier health check (PC + laptop + printers)
+└── docs/
+    ├── NETWORKING.md       ← Tailscale mesh, ports, security notes
+    ├── PRINTER-SETUP.md    ← Adding new Bambu printers, MQTT topics
+    └── TROUBLESHOOTING.md  ← Common issues, log locations, emergency recovery
+```
+
+### 3-Tier Model
+
+| Tier | Device | Role | Key Services |
+|------|--------|------|--------------|
+| 1 | PC (B550M DS3H) | Central server, internet-exposed | FastAPI :4322, postgres, redis, qdrant, minio, n8n, printdash frontend |
+| 2 | Laptop (HP) | Middle-point relay, local AI | Mosquitto :1883, jusprint :5000, bambu-camera :4323, Ollama :11434 |
+| 3 | Bambu printers | End devices, LAN-only | MQTT :8883, camera RTSP :6000 |
+
+### Networking
+
+- **Tailscale mesh** connects PC ↔ Laptop (WireGuard encrypted)
+- **Tailscale Funnel** exposes PC backend to internet (Shopify webhooks)
+- **Local LAN** connects Laptop ↔ Printers (MQTT, camera)
+- Laptop is NOT internet-exposed — only reachable from within tailnet
+
+### AI Reels Studio (`~/fofus/ops/reels-studio/`)
+
+```
+reels-studio/
+├── studio.py              ← Main orchestrator, 14-agent pipeline
+├── agents/
+│   ├── research_agent.py       ← Agent 1: Reel research + hook database
+│   ├── audio_agent.py          ← Agent 2: librosa beat/BPM/drop extraction
+│   ├── audio_selection_agent.py ← Agent 3: LLM audio recommendation
+│   ├── script_agent.py         ← Agent 4: Scene-by-scene reel scripts
+│   ├── director_agent.py       ← Agent 5: Shot lists, camera angles
+│   ├── camera_agent.py         ← Agent 6: OpenCV + LLaVA framing checks
+│   ├── storyboard_agent.py     ← Agent 7: Scene order, B-roll, transitions
+│   ├── editor_agent.py         ← Agent 8: FFmpeg editing pipeline
+│   ├── beat_sync_agent.py      ← Agent 9: Cut on beats, sync to music
+│   ├── caption_agent.py        ← Agent 10: IG captions + hashtags + SEO
+│   ├── thumbnail_agent.py      ← Agent 11: FFmpeg + PIL cover generation
+│   ├── posting_agent.py        ← Agent 12: Quality gate + Meta API publishing
+│   ├── learning_agent.py       ← Agent 13: Performance tracking + patterns
+│   └── improvement_agent.py    ← Agent 14: Weekly self-improvement cycle
+├── output/               ← Agent outputs (JSON + video files)
+├── models/               ← Editing rules (learned over time)
+├── templates/            ← Script templates
+├── audio/                ← Royalty-free audio library
+└── scripts/              ← Utility scripts
+```
+
+| Component | Tech | Purpose |
+|-----------|------|---------|
+| LLM | Ollama glm4:latest (7.6s/call) | Script writing, captions, analysis |
+| Vision LLM | Ollama llava:7b | Camera framing analysis |
+| Audio Analysis | librosa | Beat detection, BPM, drops, intensity |
+| Computer Vision | OpenCV + MediaPipe + YOLO | Framing, horizon, object detection |
+| Video Editing | FFmpeg 6.1.1 | Trim, 9:16, audio mix, text overlay |
+| Performance | ChromaDB | Pattern storage for learning |
+| Publishing | Meta Graph API v21.0 | Instagram Reels posting |
+| File Hosting | catbox.moe | Temporary public URLs for Meta API |

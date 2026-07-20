@@ -89,3 +89,7 @@ frontend/src/occ/
 frontend/src/occWorker.js
 # Any other large WASM blobs — should never re-enter the repo
 *.wasm
+PRINTER-CREDENTIALS.md
+backend/result.json
+.env.railway
+bridge-config.json

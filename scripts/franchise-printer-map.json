@@ -1,0 +1,22 @@
+{
+  "franchises": {
+    "101": {
+      "name": "3D Devine",
+      "slug": "3ddevine",
+      "city": "Thrissur",
+      "printdash_partner_id": "101",
+      "printdash_admin_email": "admin@3ddevine.com",
+      "printdash_admin_user_id": "usr_1784343814686",
+      "bambuddy_ops_group_id": 6,
+      "bambuddy_ops_group": "Franchise-101-3Ddevine-Ops",
+      "bambuddy_viewer_group_id": 7,
+      "bambuddy_viewer_group": "Franchise-101-3Ddevine-Viewer",
+      "bambuddy_user_id": 2,
+      "bambuddy_user": "3ddevine_admin",
+      "bambuddy_api_key_id": 3,
+      "printer_map": {},
+      "status": "active",
+      "created_at": "2026-07-18T08:33:57.463208"
+    }
+  }
+}

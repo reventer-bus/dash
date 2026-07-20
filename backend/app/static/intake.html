@@ -1,0 +1,282 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>FOFUS Worker Portal — Product Submission</title>
+<style>
+:root { --brown:#5D4037; --gold:#A1887F; --cream:#EFEBE9; --dark:#2C1B16; }
+* { box-sizing:border-box; margin:0; padding:0; }
+body { font-family:'Segoe UI',sans-serif; background:var(--cream); color:var(--brown); padding:20px; }
+.container { max-width:600px; margin:0 auto; background:#fff; border-radius:12px; padding:24px; box-shadow:0 2px 8px rgba(0,0,0,0.1); }
+h1 { color:var(--dark); font-size:1.5rem; margin-bottom:4px; }
+.subtitle { color:var(--gold); font-size:0.85rem; margin-bottom:20px; }
+
+/* Login screen */
+.login-screen { display:block; }
+.form-group { margin-bottom:16px; }
+label { display:block; font-size:0.85rem; font-weight:600; margin-bottom:4px; color:var(--brown); }
+.required { color:#d32f2f; }
+input,select,textarea { width:100%; padding:10px 12px; border:1px solid #ddd; border-radius:6px; font-size:14px; outline:none; }
+input:focus,select:focus,textarea:focus { border-color:var(--gold); }
+input[type=file] { padding:8px; border:1px dashed #ccc; background:#fafafa; }
+.hint { font-size:0.75rem; color:#888; margin-top:2px; }
+.row { display:flex; gap:12px; }
+.row .form-group { flex:1; }
+.btn { width:100%; padding:14px; background:var(--dark); color:#fff; border:none; border-radius:8px; font-size:1rem; font-weight:600; cursor:pointer; }
+.btn:hover { background:var(--brown); }
+.btn:disabled { background:#999; }
+.error { color:#d32f2f; font-size:0.85rem; margin-top:8px; display:none; }
+.success { display:none; background:#e8f5e9; border:1px solid #4caf50; border-radius:8px; padding:16px; margin-top:16px; text-align:center; }
+
+/* Intake form (hidden until login) */
+.intake-screen { display:none; }
+.logout { float:right; font-size:0.8rem; color:var(--gold); cursor:pointer; background:none; border:none; }
+.fieldset { border:1px solid #eee; border-radius:8px; padding:16px; margin-bottom:16px; }
+.fieldset legend { font-weight:700; color:var(--dark); padding:0 8px; font-size:0.9rem; }
+@media(max-width:500px){ .row { flex-direction:column; } }
+</style>
+</head>
+<body>
+<div class="container">
+
+<!-- LOGIN SCREEN -->
+<div class="login-screen" id="loginScreen">
+<h1>🔐 FOFUS Worker Portal</h1>
+<p class="subtitle">Login to submit products</p>
+<div class="form-group">
+<label>Email <span class="required">*</span></label>
+<input type="email" id="loginEmail" placeholder="worker1@fofus.in" required>
+</div>
+<div class="form-group">
+<label>Password <span class="required">*</span></label>
+<input type="password" id="loginPassword" placeholder="Your password" required>
+</div>
+<button class="btn" id="loginBtn" onclick="doLogin()">Login →</button>
+<div class="error" id="loginError"></div>
+</div>
+
+<!-- INTAKE FORM (hidden until login) -->
+<div class="intake-screen" id="intakeScreen">
+<h1>🖨️ FOFUS Product Submission <button class="logout" onclick="doLogout()">Logout</button></h1>
+<p class="subtitle">Add a new 3D printable product — fills Shopify + Amazon + Google</p>
+
+<form id="intake-form" enctype="multipart/form-data">
+<fieldset class="fieldset">
+<legend>Product Details</legend>
+<div class="form-group">
+<label>Product Name <span class="required">*</span></label>
+<input type="text" name="product_name" required placeholder="e.g. Ganesha Idol 12cm">
+</div>
+<div class="row">
+<div class="form-group">
+<label>Category <span class="required">*</span></label>
+<select name="category" required>
+<option value="">Select...</option>
+<option value="Religious">Religious (Idols, Devotional)</option>
+<option value="Decor">Decor (Wall Art, Planters)</option>
+<option value="Gifts">Gifts</option>
+<option value="Anime">Anime / Gaming</option>
+<option value="STEM">STEM Toys / Education</option>
+<option value="Sports">Sports (Cricket, Football)</option>
+<option value="Custom">Custom Print</option>
+</select>
+</div>
+<div class="form-group">
+<label>Material <span class="required">*</span></label>
+<select name="material" required>
+<option value="PLA">PLA</option>
+<option value="PETG">PETG</option>
+<option value="ABS">ABS</option>
+<option value="TPU">TPU (Flexible)</option>
+<option value="PLA-Silk">PLA Silk</option>
+<option value="PLA-Wood">PLA Wood Fill</option>
+</select>
+</div>
+</div>
+<div class="form-group">
+<label>Description <span class="required">*</span></label>
+<textarea name="description" required rows="4" placeholder="Detailed product description for Amazon/Google SEO."></textarea>
+</div>
+<div class="form-group">
+<label>Keywords / Tags</label>
+<input type="text" name="keywords" placeholder="e.g. ganesh idol, devotional, ganapati">
+</div>
+<div class="row">
+<div class="form-group">
+<label>Price (₹) <span class="required">*</span></label>
+<input type="number" name="price_inr" required min="80" step="1" placeholder="999">
+</div>
+<div class="form-group">
+<label>Print Time (hours)</label>
+<input type="number" name="print_time_hours" min="0.5" step="0.5" placeholder="4.5">
+</div>
+</div>
+</fieldset>
+
+<fieldset class="fieldset">
+<legend>Amazon Listing</legend>
+<div class="form-group">
+<label>Amazon Category</label>
+<select name="amazon_category">
+<option value="">Select...</option>
+<option value="Home & Kitchen">Home & Kitchen</option>
+<option value="Religious & Spiritual">Religious & Spiritual</option>
+<option value="Toys & Games">Toys & Games</option>
+<option value="Sports & Outdoors">Sports & Outdoors</option>
+<option value="Office Products">Office Products</option>
+</select>
+</div>
+<div class="form-group">
+<label>Amazon Bullet Points (5 key features)</label>
+<textarea name="amazon_bullet_points" rows="5" placeholder="1. Feature one&#10;2. Feature two&#10;3. Feature three&#10;4. Feature four&#10;5. Feature five"></textarea>
+</div>
+</fieldset>
+
+<fieldset class="fieldset">
+<legend>Files</legend>
+<div class="form-group">
+<label>3D Model File (3MF/STL/STEP) <span class="required">*</span></label>
+<input type="file" name="model_file" required accept=".3mf,.stl,.step,.stp,.obj">
+</div>
+<div class="form-group">
+<label>Product Photo 1 (main)</label>
+<input type="file" name="photo1" accept="image/*">
+</div>
+<div class="form-group">
+<label>Product Photo 2 (optional)</label>
+<input type="file" name="photo2" accept="image/*">
+</div>
+<div class="form-group">
+<label>Product Photo 3 (optional)</label>
+<input type="file" name="photo3" accept="image/*">
+</div>
+</fieldset>
+
+<fieldset class="fieldset">
+<legend>Worker Info</legend>
+<div class="form-group">
+<label>Your Name <span class="required">*</span></label>
+<input type="text" name="worker_name" required placeholder="Your name">
+</div>
+<div class="form-group">
+<label>Notes for Owner (optional)</label>
+<textarea name="notes" rows="2" placeholder="Any notes..."></textarea>
+</div>
+</fieldset>
+
+<button type="submit" class="btn" id="submitBtn">Submit Product →</button>
+</form>
+
+<div class="success" id="success">
+<h3 style="color:#2e7d32;">✅ Product Submitted!</h3>
+<p id="success-detail" style="margin-top:8px;"></p>
+<button onclick="resetForm()" style="margin-top:12px;padding:8px 20px;background:var(--dark);color:#fff;border:none;border-radius:6px;cursor:pointer;">Submit Another</button>
+</div>
+</div>
+
+</div>
+
+<script>
+const API = window.location.origin;
+let authToken = localStorage.getItem('fofus_worker_token');
+let workerName = localStorage.getItem('fofus_worker_name');
+
+// Check if already logged in
+if (authToken) {
+    showIntake();
+}
+
+function showLogin() {
+    document.getElementById('loginScreen').style.display = 'block';
+    document.getElementById('intakeScreen').style.display = 'none';
+}
+
+function showIntake() {
+    document.getElementById('loginScreen').style.display = 'none';
+    document.getElementById('intakeScreen').style.display = 'block';
+}
+
+async function doLogin() {
+    const email = document.getElementById('loginEmail').value;
+    const pass = document.getElementById('loginPassword').value;
+    const errDiv = document.getElementById('loginError');
+    errDiv.style.display = 'none';
+    
+    try {
+        const resp = await fetch(`${API}/api/v1/auth/login`, {
+            method: 'POST',
+            headers: {'Content-Type': 'application/json'},
+            body: JSON.stringify({email, password: pass})
+        });
+        const result = await resp.json();
+        if (resp.ok && result.access_token) {
+            authToken = result.access_token;
+            localStorage.setItem('fofus_worker_token', authToken);
+            // Get user profile
+            const meResp = await fetch(`${API}/api/v1/auth/me`, {
+                headers: {'Authorization': `Bearer ${authToken}`}
+            });
+            const me = await meResp.json();
+            workerName = me.name || email;
+            localStorage.setItem('fofus_worker_name', workerName);
+            showIntake();
+        } else {
+            errDiv.textContent = result.detail || 'Login failed';
+            errDiv.style.display = 'block';
+        }
+    } catch (err) {
+        errDiv.textContent = 'Connection error: ' + err.message;
+        errDiv.style.display = 'block';
+    }
+}
+
+function doLogout() {
+    localStorage.removeItem('fofus_worker_token');
+    localStorage.removeItem('fofus_worker_name');
+    authToken = null;
+    showLogin();
+}
+
+function resetForm() {
+    document.getElementById('intake-form').reset();
+    document.getElementById('intake-form').style.display = 'block';
+    document.getElementById('success').style.display = 'none';
+}
+
+document.getElementById('intake-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('submitBtn');
+    btn.disabled = true;
+    btn.textContent = 'Uploading...';
+    
+    const formData = new FormData(e.target);
+    try {
+        const resp = await fetch(`${API}/api/v1/products/intake`, {
+            method: 'POST',
+            body: formData,
+            headers: {'Authorization': `Bearer ${authToken}`}
+        });
+        const result = await resp.json();
+        if (resp.ok) {
+            document.getElementById('intake-form').style.display = 'none';
+            document.getElementById('success').style.display = 'block';
+            document.getElementById('success-detail').textContent = `"${result.id}" added to queue.`;
+        } else {
+            let errMsg = 'Submission failed';
+            if (result.detail) {
+                if (typeof result.detail === 'string') errMsg = result.detail;
+                else if (Array.isArray(result.detail)) errMsg = result.detail.map(d => d.msg || d.message || JSON.stringify(d)).join(', ');
+            }
+            alert('Error: ' + errMsg);
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message + '\n\nPlease check:\n1. Your internet connection\n2. The 3D model file is valid\n3. Try again in a moment');
+        console.error('Submit error:', err);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Submit Product →';
+});
+</script>
+</body>
+</html>

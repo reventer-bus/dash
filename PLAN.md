@@ -57,6 +57,59 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 - [x] CORS: `*.ts.net`, `*.fofus.in`, `*.vercel.app`
 - [x] Dark/light theme
 
+### Bambuddy Integration — Franchise Network Foundation (Jul 18)
+
+- [x] Bambuddy rebranded as FOFUS (UI title, manifest, logo overlay, port 8000) — Jul 20: PrintDash→FOFUS rebrand
+- [x] Printers renamed: Lusalo→AGNI-01, Bambu-A168→AGNI-02 (AGNI-03/04 pending — printers offline)
+- [x] Filament catalog seeded — 9 default types (PLA, PETG, ABS, ASA, TPU) with ₹/kg pricing
+- [x] Maintenance schedules assigned — 9 types × 2 printers (belts, rods, nozzle, PTFE, lubrication)
+- [x] Telegram notifications enabled — print start/complete/fail, maintenance due, filament low/offline
+- [x] Settings configured — INR currency, ₹8/kWh Kerala energy cost, daily local backup, low-stock alerts
+- [x] Local backup running — `bambuddy-backup-20260718-044653.zip` created
+- [x] GitHub backup configured — `reventer-bus/bambuddy-backup` (private), daily schedule, tested OK
+- [x] Obico AI monitoring enabled — medium sensitivity, notify action
+- [x] 4 FOFUS projects created — Custom Prints, Product Line, Scanning Service, Rapid Prototyping
+- [x] PrintDash→Bambuddy bridge script — `dash/scripts/printdash-bambuddy-bridge.py` (764 lines)
+- [x] Bridge cron job — every 5min, routes PRINTING orders to Bambuddy queue, updates PrintDash status
+- [x] PrintDash Health Check cron — every 30min, monitors all 3 services + security
+
+### Printer Farm Watchdog — Auto-Connect + Offline Logging (Jul 18)
+
+- [x] All 5 printers registered in Bambuddy (AGNI-01, AGNI-02, Devi, Jarvis-1, Mark1)
+- [x] Tailscale subnet routing confirmed — HP laptop advertises 192.168.0.0/24, main PC reaches printers directly (no sshuttle needed)
+- [x] Printer Farm Watchdog script — `dash/scripts/printer-farm-watchdog.py`
+  - Monitors HP laptop (100.81.41.62) every 30s via Tailscale ping
+  - Auto-reconnects all 5 printers in Bambuddy when laptop comes online
+  - Logs offline periods to `dash/logs/printer-farm-offline.log` (timestamped, duration tracked)
+  - Sends Telegram alerts on offline → online transitions
+  - Periodic health check every 5min — reconnects any dropped printers
+  - Crash recovery — Telegram alert on fatal error, auto-restart via systemd
+- [x] User systemd service — `printer-farm-watchdog.service` (enabled, linger=yes for boot-start)
+- [x] Offline log file — `dash/logs/printer-farm-offline.log` (all transitions logged)
+
+### Phase 4: Multi-tenant Franchise Architecture (Jul 18)
+
+- [x] Franchise onboarding script (`franchise-onboard.py`) — creates Partner + groups + API key + mapping
+- [x] PrintDash Partner 101 created (slug=3ddevine, name=3D Devine, Thrissur)
+- [x] PrintDash franchise_admin user (admin@3ddevine.com, role=franchise_admin, partner_id=101, verified login)
+- [x] Bambuddy franchise groups (Ops: 25 perms, Viewer: 12 perms — scoped, no admin/settings)
+- [x] Bambuddy franchisee user (3ddevine_admin, group=Franchise-101-3Ddevine-Ops, 25 perms)
+- [x] Bambuddy API key for franchise (ID=3)
+- [x] Franchise printer mapping config (`franchise-printer-map.json`)
+- [x] RBAC roles: super_admin=all, franchise_admin=own partner, technician/artist/space_manager=assigned
+- [ ] Register franchise printers (BLOCKED: offline)
+- [ ] Vercel subdomain: 101-3ddevine.platform.fofus.in
+- [ ] Order routing: auto-assign orders to franchise by location
+
+### FOFUS Rebrand — Bambuddy UI (Jul 20)
+
+- [x] All 5 printers verified connected (AGNI-01, AGNI-02, Devi, Jarvis-1, Mark1 — all ✅ connected, state: FINISH)
+- [x] Bambuddy UI rebranded PrintDash→FOFUS: index.html title, manifest.json (name/short_name/theme_color #ff6b00), JS text replacement (Bambuddy+PrintDash→FOFUS), sw.js push notifications
+- [x] FOFUS logo SVG + favicon SVG created and injected into container
+- [x] Gcode viewer title updated (PrettyGCode — FOFUS)
+- [x] PrintDash portal HTML rebranded: title, h1, tagline, accent color → FOFUS orange (#ff6b00)
+- [x] Container restarted, portal service restarted, all changes verified via curl
+
 ---
 
 ## 🔴 BLOCKING — Must Fix Before Reliable Production
@@ -187,7 +240,16 @@ pi/.env.example          — FRANCHISE_ID, NODE_API_KEY, BAMBU_LOCAL_KEY, TERRIT
 
 ## 🟢 LOW / FUTURE
 
-### 13. Territory Routing (Multi-franchise Scale)
+### 13. Worker Submission GitHub Backup
+**Status: ✅ DONE — Jul 08**
+
+- [x] Private GitHub repo `reventer-bus/fofus-worker-submissions` stores all worker submissions (3MF + photos + metadata)
+- [x] `intake.py` auto git commit + push on every new submission (best-effort, non-blocking)
+- [x] Existing 18 submissions (93MB) imported to GitHub
+- [x] Safety cron every 10 min catches missed pushes (`dash/scripts/git_backup_intake.sh`)
+- [x] Power loss / disk failure safe — all data on GitHub
+
+### 14. Territory Routing (Multi-franchise Scale)
 - Pincode → franchise assignment table in PostgreSQL
 - Route job to nearest ONLINE node (checked via heartbeat)
 - Fallback: adjacent territory → HQ queue
@@ -247,6 +309,20 @@ Login:
 
 Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolor (AMS), 1× PETG, 1× PLA Wood Fill
 
+## Print Farm Replicator Package
+
+- [x] **printfarm-replicator/** created at `~/printfarm-replicator/` — full 3-tier replication package
+  - [x] README.md — 3-tier architecture overview + quick start
+  - [x] ARCHITECTURE.md — full system topology, service inventory, data flows, failover matrix
+  - [x] BOM.md — hardware bill of materials (PC, laptop, printers, network, cost estimates)
+  - [x] pc/setup-pc.sh — one-shot PC provisioning (Docker, Python, Tailscale, systemd, UFW)
+  - [x] pc/docker-compose.yml — full Docker stack (postgres, redis, qdrant, minio, n8n, frontend)
+  - [x] laptop/setup-laptop.sh — one-shot laptop provisioning (Mosquitto, Ollama, systemd, Tailscale)
+  - [x] laptop/*.py — actual service scripts copied from running laptop (jusprint, bambu_camera, bambu_mqtt_forwarder, ai_printer_monitor, printer_personas)
+  - [x] configs/ — mosquitto.conf, nginx config, systemd templates, tailscale-setup.sh
+  - [x] scripts/verify-farm.sh — cross-tier health check (PC + laptop + printers)
+  - [x] docs/ — NETWORKING.md, PRINTER-SETUP.md, TROUBLESHOOTING.md
+
 ## Tech Debt
 
 | Issue | Impact | Fix |
@@ -257,3 +333,94 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 | Shopify webhooks not registered | No orders arrive | Manual registration |
 | ~~`orders.jsonl` full-rewrite on each update~~ | ~~Race conditions at scale~~ | ✅ DB transactions (Phase 1) |
 | Frontend login still legacy sessionStorage gate | Anonymous API calls stay unscoped | Wire Dashboard.jsx to /auth/login, send Bearer everywhere, flip AUTH_ENFORCE=true |
+
+## AI Reels Studio — 14-Agent Instagram Pipeline (Jul 18)
+
+- [x] **studio.py** — main orchestrator at `~/fofus/ops/reels-studio/studio.py` (1,952 lines total)
+- [x] **Agent 1: Reel Research** — Analyzes own + competitor reels, builds hook/viral database
+- [x] **Agent 2: Audio Analysis** — librosa-based beat/BPM/drop/intensity extraction
+- [x] **Agent 3: Audio Selection** — LLM-recommended audio matching product + niche
+- [x] **Agent 4: Script Writer** — Scene-by-scene reel scripts with timing + CTA
+- [x] **Agent 5: Director** — Shot lists with camera angles, movement, lighting
+- [x] **Agent 6: Camera Angle Correction** — OpenCV horizon/focus/brightness + LLaVA vision analysis
+- [x] **Agent 7: Storyboard** — Scene order, B-roll, text overlays, transitions, speed ramps
+- [x] **Agent 8: Video Editor** — FFmpeg pipeline (trim, 9:16, audio mix, export)
+- [x] **Agent 9: Beat Sync** — Cut on beats, sync transitions to music drops
+- [x] **Agent 10: Caption** — IG captions + 30 hashtags + SEO keywords + alt text
+- [x] **Agent 11: Thumbnail** — FFmpeg + PIL cover generation with FOFUS branding
+- [x] **Agent 12: Trial Posting** — Quality gate + Meta Graph API publishing
+- [x] **Agent 13: Performance Learning** — Track views/likes, learn best times/patterns
+- [x] **Agent 14: Self-Improvement** — Weekly review, update editing rules, suggest experiments
+- [x] **Deps installed**: librosa, opencv-python-headless (mediapipe + ultralytics in progress)
+- [x] **LLM backend**: Ollama glm4:latest (7.6s/call), llava:7b for vision
+- [x] **3 Onam reels POSTED to Instagram** — Media IDs: 18475807567105661, 18117125741501594, 17936295627335690
+- [x] **Bambuddy settings fixed** — INR/₹8/kWh restored (had reverted to USD)
+- [ ] Cron job for weekly reels studio pipeline (pending)
+- [ ] Meta API config file for automated posting (pending)
+
+## Company Revenue Goal — ₹1 Lakh by Aug 18, 2026 (Jul 18)
+
+- [x] **Goal hardcoded in all 8 AGENTS.md** — ₹1,00,000 revenue, Jul 18 → Aug 18, 31 days, ₹3,226/day
+- [x] **Pain clause hardcoded** — miss = ALL agents 1-star + possible fleet shutdown
+- [x] **CSO AGENTS.md created** — gni-labs-openclaw (Chief Sales Officer) — was missing, now complete
+- [x] **OWNER-DIRECTIVE-REVENUE-GOAL.md** — copied to all 8 agent workspaces
+- [x] **Revenue viewpoint template** — shared/tasks/revenue-goal-viewpoint.md created
+- [x] **Notification routing hardcoded** — IMMEDIATE→WhatsApp(8301874640), MID-LEVEL→Telegram(1507272535)
+- [x] **Reporting chain** — Agents→CEO→Owner. No bypassing CEO unless emergency.
+- [x] **Marketing spend authorized** — ROI ≥1000% (₹10 per ₹1 spent). No approval needed under ₹5,000 if ROI projection met.
+- [x] **12 income streams identified** — Shopify, WhatsApp, B2B, 3D scanning, custom, molds, idols, Google Shopping, blog/SEO, social media, Onam specials, candle kits
+- [x] **Branding goal** — IG 872→2000 followers, #1 3D print brand Kerala by Aug 18
+- [ ] **WhatsApp gateway reconnection** — currently disconnected, needs `hermes whatsapp` in interactive terminal
+- [ ] **Agent viewpoints** — all 8 agents to write revenue plans to shared/tasks/revenue-goal-viewpoint.md (next run cycle)
+- [ ] **CEO review + report** — CEO to compile all viewpoints and report to owner via Telegram
+
+## Sangameshan Bharathan Idol — SEO Update for Nalambalam Karkidakam (Jul 18)
+
+- [x] **Large Bharathan Idol** — tags updated with koodalmanikyam, nalambalam, karkidakam, irinjalakuda, ramayana, lord bharatha
+- [x] **Large Bharathan Idol** — body_html rewritten with Nalambalam Karkidakam SEO content + Koodalmanikyam Temple significance
+- [x] **Large Bharathan Idol** — SEO metafields updated (title_tag + description_tag)
+- [x] **Small Bharathan Idol** — tags updated with same SEO keywords
+- [x] **Small Bharathan Idol** — SEO metafields updated
+- [x] **Bundle (Sangameshan + Shankaracharya)** — tags updated with same SEO keywords
+- [x] **Bundle** — SEO metafields updated
+- [x] **Blog article published** — "Nalambalam Karkidakam: The Sacred Pilgrimage to Koodalmanikyam Temple and Lord Bharatha" (ID: 1001080914291)
+- [x] **Blog article** — links to all 3 products (small, large, bundle)
+- [ ] **Inventory fix** — Shopify token lacks inventory write scope. Stock needs manual fix in Shopify admin: Large (-3→5), Small (-2→5), Shankaracharya (-2→3)
+- [x] **Instagram giveaway** — user wants giveaway with dead stock Bharathan idol
+
+## Google Shopping + Amazon Listing (Jul 18)
+
+- [x] **Google Shopping channel** — products already published to Google & YouTube channel ✅
+- [x] **SKU assigned** — Large: 3DD-SB-LRG-15CM, Small: 3DD-SB-SML-10CM, Bundle: 3DD-SBSH-BNDL
+- [x] **Compare-at price set** — Large: Rs2000 (sale Rs1600), Small: Rs900 (sale Rs650), Bundle: Rs4000 (sale Rs3250)
+- [x] **Weight corrected** — Large: 350g, Small: 80g, Bundle: 430g
+- [x] **Google Shopping metafields** — brand, condition, MPN, gender, age_group, material, size, color, product_type, availability
+- [x] **SEO title + description** — optimized for Google Shopping (brand + product + key attributes)
+- [x] **JSON-LD structured data** — Product schema with price, availability, brand, SKU on Large Bharathan
+- [x] **Blog article #1** — Nalambalam Karkidakam pilgrimage guide (ID: 1001080914291)
+- [x] **Blog article #2** — Buy Sangameshan Bharathan idol online (ID: 1001080979827)
+- [x] **Amazon listing template** — ~/fofus/ops/marketplace/amazon-listings/sangameshan-bharathan-large.md (all 3 products)
+- [x] **Bundle composite image** — created and uploaded to Shopify (Image ID: 68204225560947)
+- [ ] **Inventory fix** — Shopify token lacks inventory write scope. Stock needs manual fix: Large (-3→5), Small (-2→5), Shankaracharya (-2→3), Bundle (0→3)
+- [ ] **Amazon listing** — user needs to list via Amazon Seller Central or Shopify Marketplace Connect manually
+- [ ] **Google Shopping feed** — sync via Shopify Google & YouTube channel (automatic, may take 24-48h)
+
+## AI Character Engine — Hermes OS (Jul 18)
+
+- [ ] Build fully local AI Character Engine for video generation
+- [ ] Benchmark: Wan 2.2, Hunyuan Video, SkyReels, MimicMotion, LivePortrait, EchoMimic, MuseTalk, FramePack, ComfyUI
+- [ ] Character database with embeddings, reference media, voice profiles
+- [ ] APIs: /characters/create, /characters/train, /video/generate, /voice/generate, /lipsync
+- [ ] Dashboard: Character Manager, Gallery, Training, Video Generator, GPU Monitor
+- [ ] Docker deployment + documentation
+
+## Railway + Bridge (Jul 20)
+
+- [x] **Bridge service** — local laptop bridge connecting Bambuddy to Railway PrintDash (`~/Desktop/bridge/`)
+- [x] **Bridge API endpoints** — `/api/v1/bridge/*` in backend (printer status, commands)
+- [x] **Railway Dockerfile** — `Dockerfile.railway` (multi-stage: frontend build + backend)
+- [x] **Railway config** — `railway.toml` + `.env.railway`
+- [x] **Bridge installer** — `install.sh` / `uninstall.sh` / `bridge-config.json` / `README.md`
+- [ ] **Railway deploy** — user login + push code + set env vars
+- [ ] **Bridge config** — update `bridge-config.json` with Railway URL after deploy
+- [ ] **Start bridge** — `./install.sh` on laptop

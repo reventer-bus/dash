@@ -51,6 +51,7 @@ _printers: list[dict] = []
 _inventory: list[dict] = []
 _printer_connections: dict[str, dict] = {}
 _comments: list[dict] = []  # per-order comment thread
+_detection_alerts: list[dict] = []  # AI vision detection alerts
 
 _CONNECTION_KEYS = ("connection_type", "host", "serial", "access_code", "api_key")
 
@@ -171,6 +172,9 @@ async def startup_load():
                      (await s.execute(select(FeedbackEntry).order_by(FeedbackEntry.id))).scalars().all()]
         _comments = [dict(r.data) for r in
                      (await s.execute(select(OrderComment).order_by(OrderComment.created_at))).scalars().all()]
+
+    # Load AI vision detection alerts from JSONL
+    _load_detections()
 
 
 async def _import_legacy_jsonl(s):
@@ -812,3 +816,99 @@ def _resolve_order_id(order_id: str) -> str:
     """Try to find the canonical order id (matches by id or spec_id)."""
     o = get_order(order_id)
     return (o.get("id") or order_id) if o else order_id
+
+
+# ── AI Vision Detection Alerts ────────────────────────────────────────────────
+
+_DETECTION_DIR = _DIR / "detections"
+_DETECTION_DIR.mkdir(parents=True, exist_ok=True)
+_DETECTION_PATH = _DETECTION_DIR / "detections.jsonl"
+
+
+def _load_detections():
+    """Load detection alerts from JSONL on startup."""
+    if _DETECTION_PATH.exists():
+        for line in _DETECTION_PATH.read_text().splitlines():
+            line = line.strip()
+            if line:
+                try:
+                    _detection_alerts.append(json.loads(line))
+                except json.JSONDecodeError:
+                    pass
+
+
+def _persist_detection(alert: dict):
+    """Append a detection alert to JSONL."""
+    with open(_DETECTION_PATH, "a") as f:
+        f.write(json.dumps(alert) + "\n")
+
+
+def add_detection_alert(alert: dict) -> dict:
+    """Add a vision detection alert. Called by the AI vision monitor.
+
+    Expected fields: printer_name, severity, category, message, image_path (optional)
+    Categories: initial_layer, layer_issue, nozzle_clog, nozzle_malfunction,
+                air_printing, other_print_issue
+    """
+    now = datetime.now(timezone.utc).isoformat()
+    entry = {
+        "id": f"det-{int(datetime.now(timezone.utc).timestamp() * 1000)}",
+        "printer_name": alert.get("printer_name", "unknown"),
+        "severity": alert.get("severity", "warning"),  # info | warning | critical
+        "category": alert.get("category", "other_print_issue"),
+        "message": alert.get("message", ""),
+        "image_path": alert.get("image_path"),
+        "confidence": alert.get("confidence", 0.0),
+        "acknowledged": False,
+        "created_at": now,
+    }
+    _detection_alerts.append(entry)
+    _persist_detection(entry)
+    logger.info(f"Detection alert added: {entry['id']} for {entry['printer_name']} — {entry['category']}")
+    # Keep only last 200 alerts in memory
+    if len(_detection_alerts) > 200:
+        _detection_alerts[:] = _detection_alerts[-200:]
+    return entry
+
+
+def list_detection_alerts(printer_name: str | None = None,
+                          acknowledged: bool | None = None,
+                          limit: int = 50) -> list[dict]:
+    """Return detection alerts, optionally filtered."""
+    alerts = _detection_alerts
+    if printer_name:
+        alerts = [a for a in alerts if a["printer_name"] == printer_name]
+    if acknowledged is not None:
+        alerts = [a for a in alerts if a["acknowledged"] == acknowledged]
+    # Sort newest first
+    alerts = sorted(alerts, key=lambda a: a["created_at"], reverse=True)
+    return alerts[:limit]
+
+
+def acknowledge_detection(alert_id: str) -> dict | None:
+    """Mark a detection alert as acknowledged."""
+    for a in _detection_alerts:
+        if a["id"] == alert_id:
+            a["acknowledged"] = True
+            # Re-write the whole file
+            with open(_DETECTION_PATH, "w") as f:
+                for d in _detection_alerts:
+                    f.write(json.dumps(d) + "\n")
+            return a
+    return None
+
+
+def clear_detection_alerts(printer_name: str | None = None) -> int:
+    """Clear detection alerts, optionally for a specific printer. Returns count cleared."""
+    global _detection_alerts
+    if printer_name:
+        count = sum(1 for a in _detection_alerts if a["printer_name"] == printer_name)
+        _detection_alerts[:] = [a for a in _detection_alerts if a["printer_name"] != printer_name]
+    else:
+        count = len(_detection_alerts)
+        _detection_alerts.clear()
+    # Re-write file
+    with open(_DETECTION_PATH, "w") as f:
+        for d in _detection_alerts:
+            f.write(json.dumps(d) + "\n")
+    return count

@@ -103,6 +103,10 @@ dash/
 | PrintDash Health Check | Cron | every 30min → `dash/scripts/printdash-health-check.py` | ✅ Live (Jul 18) |
 | Franchise onboarding | Script | `dash/scripts/franchise-onboard.py` | ✅ Live (Jul 18) |
 | Franchise printer map | JSON | `dash/scripts/franchise-printer-map.json` | ✅ 1 franchise (101-3Ddevine) |
+| PrintDash backend (Railway) | Railway | `https://printdash-production.up.railway.app` → `print.business.fofus.in` | ✅ Live (Jul 20, cert pending) |
+| PrintDash database (Postgres) | Railway | `postgres.railway.internal:5432` | ✅ Live (Jul 20) |
+| FOFUS Quote (Railway) | Railway | `https://fofus-quote.fofus.in` → `bgq6sew5.up.railway.app` | ✅ Live (Jul 20, cert pending) |
+| FOFUS Quote volume | Railway Volume | `/app/data` (500 MB) | ✅ Live (Jul 20) |
 
 ### Bambuddy/FOFUS Integration (Jul 18, rebranded Jul 20)
 
@@ -141,6 +145,13 @@ Bridge Script (printdash-bambuddy-bridge.py):
   Polls PrintDash for PRINTING orders → downloads 3MF → uploads to Bambuddy
   → creates queue item → starts print → updates PrintDash order status
   Idempotent (state file tracks processed orders), Telegram alerts on failure
+
+FOFUS Quote → PrintDash Bridge (Jul 20):
+  fofus-quote (Railway) slices STL with OrcaSlicer → generates quote
+  → POST /api/print-jobs/:id/forward → PrintDash /api/v1/orders/create
+  → PrintDash manages payment flow (NEW → AI_PREP → PRINTING)
+  → printdash-bambuddy-bridge.py dispatches to Bambuddy printers
+  Env: PRINTDASH_BASE on fofus-quote service → printdash-production.up.railway.app
 ```
 
 ### Backend Hosting (Ubuntu + Tailscale Funnel)

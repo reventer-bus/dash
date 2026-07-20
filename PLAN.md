@@ -110,6 +110,21 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 - [x] PrintDash portal HTML rebranded: title, h1, tagline, accent color → FOFUS orange (#ff6b00)
 - [x] Container restarted, portal service restarted, all changes verified via curl
 
+### Railway Cloud Deployment + FOFUS Quote (Jul 20)
+
+- [x] PrintDash backend deployed to Railway (`printdash-production.up.railway.app`)
+- [x] Postgres database added on Railway (replaces local SQLite for cloud)
+- [x] Custom domain `print.business.fofus.in` — CNAME + TXT on GoDaddy, cert pending
+- [x] FOFUS Quote service deployed to Railway (`fofus-quote.fofus.in`)
+  - Fixed Dockerfile: removed VOLUME directive, fixed COPY paths for repo-root context
+  - Fixed Node version mismatch (NodeSource Node 20 in runtime stage)
+  - Fixed OrcaSlicer AppImage download URL (v2.3.1 Ubuntu2404 filename)
+  - Railway volume added at `/app/data` (500 MB) for SQLite + uploads + sliced G-code
+- [x] Custom domain `fofus-quote.fofus.in` — CNAME + TXT on GoDaddy, cert pending
+- [x] Bridge endpoint: `POST /api/print-jobs/:id/forward` → PrintDash `/api/v1/orders/create`
+- [x] PRINTDASH_BASE env var set on fofus-quote Railway service
+- [ ] Railway domain verification + TLS cert issuance (both domains — pending propagation)
+
 ---
 
 ## 🔴 BLOCKING — Must Fix Before Reliable Production

@@ -97,19 +97,47 @@ async def health():
     return {"status": "ok", "service": "Maker AI API", "business": "fofus.in"}
 
 
-# ── Serve frontend (PrintDash dashboard) ─────────────────────────────────────
-FRONTEND_DIR = Path(__file__).resolve().parent.parent.parent / "frontend" / "dist"
+# ── Serve frontend (FOFUS dashboard) ──────────────────────────────────────────
+# Try multiple candidate locations: Docker container layout and local dev layout
+_BASE = Path(__file__).resolve().parent  # .../app or /app/app
+FRONTEND_DIR = None
+for _candidate in [
+    _BASE.parent.parent / "frontend" / "dist",   # local dev: dash/backend/app → dash/frontend/dist
+    _BASE.parent / "frontend" / "dist",          # Docker:    /app/app → /app/frontend/dist
+    Path("/app/frontend/dist"),                  # Docker absolute fallback
+]:
+    if (_candidate / "index.html").exists():
+        FRONTEND_DIR = _candidate
+        break
+if FRONTEND_DIR is None:
+    FRONTEND_DIR = _BASE.parent.parent / "frontend" / "dist"  # last resort for error msg
+assert FRONTEND_DIR is not None
 if FRONTEND_DIR.exists():
     app.mount("/assets", StaticFiles(directory=str(FRONTEND_DIR / "assets")), name="assets")
 
     @app.get("/")
+    async def serve_portal():
+        """Serve the FOFUS portal landing page with cards linking to dashboard + Bambuddy."""
+        portal = FRONTEND_DIR / "printdash-portal.html"
+        if portal.exists():
+            return FileResponse(str(portal), media_type="text/html")
+        return FileResponse(str(FRONTEND_DIR / "index.html"), media_type="text/html")
+
+    @app.get("/dashboard")
     async def serve_dashboard():
+        return FileResponse(str(FRONTEND_DIR / "index.html"), media_type="text/html")
+
+    @app.get("/dashboard/{full_path:path}")
+    async def serve_dashboard_sub(full_path: str):
+        fp = FRONTEND_DIR / full_path
+        if fp.is_file():
+            return FileResponse(str(fp))
         return FileResponse(str(FRONTEND_DIR / "index.html"), media_type="text/html")
 
     @app.get("/{full_path:path}")
     async def spa_catch_all(full_path: str):
         """SPA fallback: serve index.html for any non-API route."""
-        if full_path.startswith("api/") or full_path in ("health", "docs", "openapi.json", "redoc"):
+        if full_path.startswith("api/") or full_path in ("health", "docs", "openapi.json", "redoc", "intake"):
             return {"error": "Not found"}
         fp = FRONTEND_DIR / full_path
         if fp.is_file():

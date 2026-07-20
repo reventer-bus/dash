@@ -1,21 +1,9 @@
 [deploy]
-# Railway deployment config
 startCommand = "uvicorn app.main:app --host 0.0.0.0 --port $PORT"
 healthcheckPath = "/health"
-healthcheckTimeout = 30
+healthcheckTimeout = 60
 restartPolicyType = "ON_FAILURE"
 restartPolicyMaxRetries = 5
 
 [build]
-# Build from Dockerfile.railway at repo root
 dockerfilePath = "Dockerfile.railway"
-
-[env]
-# These are set in Railway dashboard or via CLI
-# DATABASE_URL — Railway provides Postgres automatically
-# REDIS_URL — Railway provides Redis automatically  
-# SECRET_KEY — generate a strong secret
-# BRIDGE_TOKEN — shared with local bridge service
-# SHOPIFY_DOMAIN — store.fofus.in
-# SHOPIFY_ADMIN_TOKEN — from ~/Documents/shopify_token.txt
-# SHOPIFY_API_VERSION — 2024-10

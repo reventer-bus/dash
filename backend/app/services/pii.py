@@ -11,9 +11,17 @@ from pathlib import Path
 
 _PII_PATH = Path(__file__).resolve().parents[3] / "pipeline" / "pii_mask.py"
 
-_spec = importlib.util.spec_from_file_location("pii_mask", _PII_PATH)
-_mod = importlib.util.module_from_spec(_spec)
-_spec.loader.exec_module(_mod)
+if _PII_PATH.exists():
+    _spec = importlib.util.spec_from_file_location("pii_mask", _PII_PATH)
+    _mod = importlib.util.module_from_spec(_spec)
+    _spec.loader.exec_module(_mod)
 
-mask_message = _mod.mask_message
-llm_second_pass = _mod.llm_second_pass
+    mask_message = _mod.mask_message
+    llm_second_pass = _mod.llm_second_pass
+else:
+    # Fallback: no PII masking (e.g. Railway Docker where pipeline/ isn't copied)
+    def mask_message(msg: str) -> str:
+        return msg
+
+    def llm_second_pass(msg: str) -> str:
+        return msg

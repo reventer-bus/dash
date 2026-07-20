@@ -24,7 +24,11 @@ _SessionLocal = None
 def _get_engine():
     global _engine, _SessionLocal
     if _engine is None:
-        _engine = create_async_engine(settings.DATABASE_URL, echo=False)
+        url = settings.DATABASE_URL
+        # Auto-convert postgresql:// → postgresql+asyncpg:// for async engine
+        if url.startswith("postgresql://"):
+            url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
+        _engine = create_async_engine(url, echo=False)
         _SessionLocal = sessionmaker(_engine, class_=AsyncSession, expire_on_commit=False)
     return _engine, _SessionLocal
 

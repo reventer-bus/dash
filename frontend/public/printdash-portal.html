@@ -1,0 +1,119 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>FOFUS — 3D Print Farm</title>
+  <link rel="icon" type="image/svg+xml" href="/favicon.svg">
+  <style>
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    :root {
+      --bg: #0a0a0f; --card: #12121f; --border: rgba(255,107,0,0.12);
+      --accent: #ff6b00; --green: #00ff88; --orange: #ff9500; --red: #ff4444;
+      --text: #e0e0e0; --muted: #666;
+    }
+    body {
+      background: var(--bg); color: var(--text);
+      font-family: 'Inter', -apple-system, sans-serif;
+      min-height: 100vh; display: flex; align-items: center; justify-content: center;
+    }
+    .container { max-width: 720px; text-align: center; padding: 40px; }
+    .logo-wrap { display: flex; align-items: center; justify-content: center; gap: 12px; margin-bottom: 8px; }
+    .logo-icon { width: 56px; height: 56px; }
+    h1 { font-size: 28px; font-weight: 700; letter-spacing: -0.5px; }
+    h1 .accent { color: var(--accent); }
+    .tagline { color: var(--muted); font-size: 13px; letter-spacing: 2px; margin-bottom: 8px; text-transform: uppercase; }
+    .status-bar { display: flex; align-items: center; justify-content: center; gap: 8px; margin-bottom: 36px; }
+    .status-dot { width: 8px; height: 8px; border-radius: 50%; background: var(--green); animation: pulse 2s infinite; }
+    .status-text { color: var(--green); font-size: 12px; font-weight: 600; }
+    @keyframes pulse { 0%,100% { opacity: 1; } 50% { opacity: 0.4; } }
+
+    .printers { display: flex; flex-wrap: wrap; gap: 8px; justify-content: center; margin-bottom: 36px; }
+    .printer-chip { background: var(--card); border: 1px solid var(--border); border-radius: 8px; padding: 8px 14px; font-size: 12px; display: flex; align-items: center; gap: 6px; }
+    .printer-chip .dot { width: 6px; height: 6px; border-radius: 50%; background: var(--green); }
+    .printer-chip .name { font-weight: 600; }
+    .printer-chip .ip { color: var(--muted); font-family: 'JetBrains Mono', monospace; font-size: 11px; }
+
+    .cards { display: grid; grid-template-columns: 1fr 1fr; gap: 16px; margin-bottom: 32px; }
+    .card {
+      background: var(--card); border: 1px solid var(--border); border-radius: 14px;
+      padding: 28px 20px; text-decoration: none; color: var(--text);
+      transition: all 0.25s cubic-bezier(0.4,0,0.2,1); position: relative; overflow: hidden;
+    }
+    .card::before { content: ''; position: absolute; top: 0; left: 0; right: 0; height: 2px; background: linear-gradient(90deg, transparent, var(--accent), transparent); opacity: 0; transition: opacity 0.3s; }
+    .card:hover { border-color: rgba(255,107,0,0.35); transform: translateY(-3px); box-shadow: 0 12px 32px rgba(255,107,0,0.08); }
+    .card:hover::before { opacity: 1; }
+    .card-icon { font-size: 32px; margin-bottom: 14px; }
+    .card-title { font-size: 17px; font-weight: 600; margin-bottom: 6px; }
+    .card-desc { font-size: 12px; color: var(--muted); line-height: 1.5; }
+    .card-arrow { margin-top: 12px; font-size: 14px; color: var(--accent); opacity: 0; transition: opacity 0.3s; }
+    .card:hover .card-arrow { opacity: 1; }
+
+    .creds { background: var(--card); border: 1px solid var(--border); border-radius: 10px; padding: 16px 20px; margin-bottom: 24px; text-align: left; }
+    .creds-title { font-size: 11px; color: var(--muted); text-transform: uppercase; letter-spacing: 1px; margin-bottom: 8px; }
+    .creds-row { display: flex; justify-content: space-between; font-size: 13px; padding: 4px 0; }
+    .creds-label { color: var(--muted); }
+    .creds-val { font-family: 'JetBrains Mono', monospace; color: var(--text); }
+
+    .footer { color: #333; font-size: 11px; }
+    .footer a { color: var(--accent); text-decoration: none; }
+
+    @media (max-width: 540px) {
+      .cards { grid-template-columns: 1fr; }
+      .printers { flex-direction: column; align-items: center; }
+    }
+  </style>
+</head>
+<body>
+  <div class="container">
+    <div class="logo-wrap">
+      <svg class="logo-icon" viewBox="0 0 100 100" fill="none">
+        <rect x="15" y="20" width="70" height="55" rx="6" stroke="#ff6b00" stroke-width="3"/>
+        <rect x="25" y="30" width="50" height="25" rx="3" fill="#ff6b00" fill-opacity="0.15"/>
+        <circle cx="40" cy="65" r="6" stroke="#ff6b00" stroke-width="2.5"/>
+        <circle cx="60" cy="65" r="6" stroke="#ff6b00" stroke-width="2.5"/>
+        <path d="M35 42 L45 52 L65 32" stroke="#ff6b00" stroke-width="3" stroke-linecap="round" stroke-linejoin="round"/>
+      </svg>
+      <h1><span class="accent">FOFUS</span></h1>
+    </div>
+    <div class="tagline">3D Print Farm · Kerala</div>
+    <div class="status-bar">
+      <div class="status-dot"></div>
+      <div class="status-text" id="sysStatus">All Systems Online</div>
+    </div>
+
+    <div class="printers" id="printers">
+      <div class="printer-chip"><div class="dot"></div><span class="name">AGNI-01</span><span class="ip">.153</span></div>
+      <div class="printer-chip"><div class="dot"></div><span class="name">AGNI-02</span><span class="ip">.168</span></div>
+      <div class="printer-chip"><div class="dot"></div><span class="name">Devi</span><span class="ip">.161</span></div>
+      <div class="printer-chip"><div class="dot"></div><span class="name">Jarvis-1</span><span class="ip">.167</span></div>
+      <div class="printer-chip"><div class="dot"></div><span class="name">Mark1</span><span class="ip">.118</span></div>
+    </div>
+
+    <div class="cards">
+      <a href="/dashboard" class="card">
+        <div class="card-icon">📊</div>
+        <div class="card-title">Farm Dashboard</div>
+        <div class="card-desc">Live printer status, print queue, order management, analytics</div>
+        <div class="card-arrow">→ Open</div>
+      </a>
+      <a href="https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net:8443" class="card" target="_blank">
+        <div class="card-icon">🖨️</div>
+        <div class="card-title">Printer Control</div>
+        <div class="card-desc">Bambu Lab A1 control, file uploads, AMS filament, cameras</div>
+        <div class="card-arrow">→ Open</div>
+      </a>
+    </div>
+
+    <div class="creds">
+      <div class="creds-title">Login Credentials</div>
+      <div class="creds-row"><span class="creds-label">Technician</span><span class="creds-val">shaju@fofus.in · 123456</span></div>
+      <div class="creds-row"><span class="creds-label">Admin</span><span class="creds-val">reventer@fofus.in · 123456</span></div>
+    </div>
+
+    <div class="footer">
+      Powered by <a href="https://fofus.in">FOFUS 3D Printing</a> · 5 × Bambu Lab A1
+    </div>
+  </div>
+</body>
+</html>

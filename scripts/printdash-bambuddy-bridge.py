@@ -38,12 +38,12 @@ from pathlib import Path
 # Configuration
 # ──────────────────────────────────────────────────────────────────────
 
-PRINTDASH_BASE = os.environ.get("PRINTDASH_BASE", "http://localhost:4322")
+PRINTDASH_BASE = os.environ.get("PRINTDASH_BASE", "https://printdash-production.up.railway.app")
 BAMBUDDY_BASE  = os.environ.get("BAMBUDDY_BASE",  "http://localhost:8000")
 
-# Optional Bambuddy API key (for webhook-protected endpoints; queue/library
-# endpoints have auth disabled locally but we send it if set).
-BAMBUDDY_API_KEY = os.environ.get("BAMBUDDY_API_KEY", "")
+# Bambuddy JWT auth credentials — the API requires Bearer token auth.
+BAMBUDDY_USER = os.environ.get("BAMBUDDY_USER", "shaju@fofus.in")
+BAMBUDDY_PASS = os.environ.get("BAMBUDDY_PASS", "123456")
 
 # Telegram notification settings  (token read from ~/.hermes/.env)
 HERMES_ENV_PATH = Path.home() / ".hermes" / ".env"
@@ -72,11 +72,11 @@ LOG_DIR.mkdir(parents=True, exist_ok=True)
 # mapping here.
 # ──────────────────────────────────────────────────────────────────────
 PRINTER_MAP = {
-    "bambu-agni-02": 2,   # Bambu-A168
-    "bambu-agni-05": 1,   # Lusalo
-    # "bambu-agni-01": None,  # not registered
-    # "bambu-agni-03": None,  # not registered
-    # "bambu-agni-04": None,  # not registered
+    "bambu-agni-01": 6,   # AGNI-01 (192.168.0.153)
+    "bambu-agni-02": 2,   # AGNI-02 / Bambu-A168 (192.168.0.168)
+    "bambu-devi":    3,   # Devi (192.168.0.161)
+    "bambu-jarvis":  5,   # Jarvis-1 (192.168.0.167)
+    "bambu-mark1":   4,   # Mark1 (192.168.0.118)
 }
 
 # Reverse map for logging
@@ -390,31 +390,72 @@ def update_order_status(order_id, new_status, note=""):
 
 
 # ──────────────────────────────────────────────────────────────────────
-# Bambuddy API
+# Bambuddy JWT auth
 # ──────────────────────────────────────────────────────────────────────
 
+_bambuddy_token = None
+_bambuddy_token_expires = 0.0
+
+
+def bambuddy_login():
+    """Login to Bambuddy and cache the JWT token (valid 24h)."""
+    global _bambuddy_token, _bambuddy_token_expires
+    # Reuse cached token if still valid (with 5-min safety margin)
+    if _bambuddy_token and time.time() < _bambuddy_token_expires - 300:
+        return _bambuddy_token
+
+    url = f"{BAMBUDDY_BASE}/api/v1/auth/login"
+    body = json.dumps({"username": BAMBUDDY_USER, "password": BAMBUDDY_PASS}).encode()
+    req = urllib.request.Request(
+        url, data=body, method="POST",
+        headers={"Content-Type": "application/json"},
+    )
+    with urllib.request.urlopen(req, timeout=15) as resp:
+        result = json.loads(resp.read())
+    token = result.get("access_token")
+    if not token:
+        raise RuntimeError(f"Bambuddy login failed: no access_token in response: {result}")
+    _bambuddy_token = token
+    _bambuddy_token_expires = time.time() + 86400  # 24h
+    logger.debug("Bambuddy login OK — token cached for 24h")
+    return token
+
+
 def bambuddy_headers():
-    """Build headers for Bambuddy requests."""
-    h = {}
-    if BAMBUDDY_API_KEY:
-        h["X-API-Key"] = BAMBUDDY_API_KEY
-    return h
+    """Build headers with fresh JWT Bearer token for Bambuddy requests."""
+    token = bambuddy_login()
+    return {"Authorization": f"Bearer {token}"}
+
+
+def bambuddy_force_relogin():
+    """Force a fresh login (call on 401 errors)."""
+    global _bambuddy_token, _bambuddy_token_expires
+    _bambuddy_token = None
+    _bambuddy_token_expires = 0.0
+    return bambuddy_login()
 
 
 def list_bambuddy_printers():
-    """GET /api/v1/printers/ — return list of printer dicts."""
+    """GET /api/v1/printers/ — return list of printer dicts. Retries on 401."""
     url = f"{BAMBUDDY_BASE}/api/v1/printers/"
-    try:
-        data = http_get_json(url, headers=bambuddy_headers())
-        if isinstance(data, list):
-            return data
-        if isinstance(data, dict):
-            # Handle wrapped responses
-            return data.get("printers", data.get("data", []))
-        return []
-    except Exception as e:
-        logger.error("Failed to list Bambuddy printers: %s", e)
-        return []
+    for attempt in range(2):
+        try:
+            data = http_get_json(url, headers=bambuddy_headers())
+            if isinstance(data, list):
+                return data
+            if isinstance(data, dict):
+                return data.get("printers", data.get("data", []))
+            return []
+        except urllib.error.HTTPError as e:
+            if e.code == 401 and attempt == 0:
+                logger.warning("401 on list printers — forcing re-login")
+                bambuddy_force_relogin()
+                continue
+            logger.error("Failed to list Bambuddy printers: HTTP %s", e.code)
+            return []
+        except Exception as e:
+            logger.error("Failed to list Bambuddy printers: %s", e)
+            return []
 
 
 def check_printer_online(printer_id):
@@ -667,9 +708,11 @@ def run(dry_run=False):
         send_telegram(f"❌ PrintDash→Bambuddy Bridge\nPrintDash is down: {e}")
         return 1
 
-    # 2. Check that Bambuddy is reachable
+    # 2. Check that Bambuddy is reachable (login + list printers)
     try:
-        list_bambuddy_printers()
+        bambuddy_login()
+        printers = list_bambuddy_printers()
+        logger.info("Bambuddy reachable — %d printers online", len(printers))
     except Exception as e:
         msg = f"Bambuddy unreachable at {BAMBUDDY_BASE}: {e}"
         logger.error(msg)

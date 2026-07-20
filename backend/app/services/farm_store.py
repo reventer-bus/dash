@@ -135,9 +135,9 @@ async def startup_load():
     global _orders, _feedback, _inventory, _printers, _printer_connections, _comments
 
     engine, _ = _get_engine()
-    if engine.dialect.name == "sqlite":
-        # Dev fallback: no alembic run against sqlite — create what we need.
-        # Chat tables are excluded (they use PG-only ARRAY columns).
+    if engine.dialect.name in ("sqlite", "postgresql"):
+        # Create tables if they don't exist (dev sqlite + fresh Railway Postgres).
+        # Chat tables excluded (PG-only ARRAY columns, handled by alembic).
         from app.core.database import Base
         from app.models.user import User
         from app.models.partner import Partner as PartnerModel

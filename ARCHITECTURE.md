@@ -107,6 +107,8 @@ dash/
 | PrintDash database (Postgres) | Railway | `postgres.railway.internal:5432` | ✅ Live (Jul 20) |
 | FOFUS Quote (Railway) | Railway | `https://fofus-quote.fofus.in` → `bgq6sew5.up.railway.app` | ✅ Live (Jul 20, cert pending) |
 | FOFUS Quote volume | Railway Volume | `/app/data` (500 MB) | ✅ Live (Jul 20) |
+| FOFUS CEO (agni-ceo) | **Hermes OS** | `~/hermes-os/fofus/ceo/` / `~/fofus/ops/ceo_dashboard.py` | ✅ Resident in Hermes OS, **not Railway** |
+| FOFUS Worker Portal | Railway (PrintDash backend) | `https://print.business.fofus.in/intake` | ✅ Live (Jul 21, intake verified end-to-end) |
 
 ### Bambuddy/FOFUS Integration (Jul 18, rebranded Jul 20)
 

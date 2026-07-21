@@ -123,7 +123,9 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 - [x] Custom domain `fofus-quote.fofus.in` — CNAME + TXT on GoDaddy, cert pending
 - [x] Bridge endpoint: `POST /api/print-jobs/:id/forward` → PrintDash `/api/v1/orders/create`
 - [x] PRINTDASH_BASE env var set on fofus-quote Railway service
-- [ ] Railway domain verification + TLS cert issuance (both domains — pending propagation)
+- [x] **Railway domain verification + TLS cert issuance** for `print.business.fofus.in` — ACTIVE (Jul 21)
+- [ ] **Railway domain verification + TLS cert issuance** for `quote.business.fofus.in` — pending propagation
+- [x] **FOFUS Worker Portal exposed on Railway** — `https://print.business.fofus.in/intake`, end-to-end intake submission verified
 
 ---
 
@@ -381,7 +383,7 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 - [x] **OWNER-DIRECTIVE-REVENUE-GOAL.md** — copied to all 8 agent workspaces
 - [x] **Revenue viewpoint template** — shared/tasks/revenue-goal-viewpoint.md created
 - [x] **Notification routing hardcoded** — IMMEDIATE→WhatsApp(8301874640), MID-LEVEL→Telegram(1507272535)
-- [x] **Reporting chain** — Agents→CEO→Owner. No bypassing CEO unless emergency.
+- [x] **Reporting chain** — Agents→CEO→Owner. No bypassing CEO unless emergency. CEO agent is **Hermes OS resident**, not Railway.
 - [x] **Marketing spend authorized** — ROI ≥1000% (₹10 per ₹1 spent). No approval needed under ₹5,000 if ROI projection met.
 - [x] **12 income streams identified** — Shopify, WhatsApp, B2B, 3D scanning, custom, molds, idols, Google Shopping, blog/SEO, social media, Onam specials, candle kits
 - [x] **Branding goal** — IG 872→2000 followers, #1 3D print brand Kerala by Aug 18

@@ -7,6 +7,7 @@ import http.server
 import http.client
 import urllib.parse
 import os
+import re
 
 PORT = 4321
 PRINTDASH_HOST = ('127.0.0.1', 4322)
@@ -28,6 +29,17 @@ class PortalHandler(http.server.BaseHTTPRequestHandler):
 
         # Static assets for portal
         if path.startswith('/printdash-logo.svg') or path.startswith('/favicon.svg') or path.startswith('/icon-'):
+            self.serve_file(os.path.expanduser(f'~/dash/frontend/dist{path}'))
+            return
+
+        # robots.txt + sitemap.xml for SEO
+        if path == '/robots.txt':
+            self.serve_file(os.path.expanduser('~/dash/frontend/dist/robots.txt'))
+            return
+        if path == '/sitemap.xml':
+            self.serve_file(os.path.expanduser('~/dash/frontend/dist/sitemap.xml'))
+            return
+        if re.fullmatch(r'/[a-f0-9]{32}\.txt', path):
             self.serve_file(os.path.expanduser(f'~/dash/frontend/dist{path}'))
             return
 

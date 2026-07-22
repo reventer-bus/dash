@@ -1,9 +1,9 @@
 from contextlib import asynccontextmanager
 from pathlib import Path
-from fastapi import FastAPI
+from fastapi import FastAPI, HTTPException
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, PlainTextResponse, Response
 
 from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify, admin_users, chat, intake, orderflow, camera, bridge
 from app.services import farm_store
@@ -122,6 +122,27 @@ if FRONTEND_DIR.exists():
         if portal.exists():
             return FileResponse(str(portal), media_type="text/html")
         return FileResponse(str(FRONTEND_DIR / "index.html"), media_type="text/html")
+
+    @app.get("/robots.txt")
+    async def serve_robots():
+        fp = FRONTEND_DIR / "robots.txt"
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/plain")
+        return PlainTextResponse("User-agent: *\nAllow: /\n")
+
+    @app.get("/sitemap.xml")
+    async def serve_sitemap():
+        fp = FRONTEND_DIR / "sitemap.xml"
+        if fp.exists():
+            return FileResponse(str(fp), media_type="application/xml")
+        return Response("", media_type="application/xml", status_code=404)
+
+    @app.get("/{indexnow_key}.txt")
+    async def serve_indexnow_key(indexnow_key: str):
+        fp = FRONTEND_DIR / f"{indexnow_key}.txt"
+        if fp.exists():
+            return FileResponse(str(fp), media_type="text/plain")
+        raise HTTPException(status_code=404, detail="Not found")
 
     @app.get("/dashboard")
     async def serve_dashboard():

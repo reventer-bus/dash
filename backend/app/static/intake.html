@@ -81,6 +81,17 @@ input[type=file] { padding:8px; border:1px dashed #ccc; background:#fafafa; }
     <li><strong>Personalized desk/phone accessories</strong> — only if unique</li>
   </ol>
   <p class="task-note">💡 Products that can be personalized score highest. Avoid generic crowded items like basic phone stands.</p>
+
+  <h4>Website Testing & Approval Duty</h4>
+  <ol>
+    <li><strong>Manual testing of all websites we build</strong> — open every page, click every button, fill every form, check on mobile + desktop</li>
+    <li><strong>Check product pages</strong> — verify photos load, prices are correct, descriptions match, variants work, add-to-cart functions</li>
+    <li><strong>Check forms and checkout</strong> — test contact forms, search, filters, cart, checkout flow end-to-end</li>
+    <li><strong>Report bugs</strong> — use the "Report Mistaken Products" section below to flag any errors, broken pages, wrong info, or missing content</li>
+    <li><strong>Approval</strong> — once you confirm a website works correctly, notify the owner that it is approved. No website goes live without your sign-off</li>
+  </ol>
+  <p class="task-note">🔧 This is a core responsibility — not optional. Every website we build must be manually tested and approved by you before it goes live.</p>
+
   <p class="task-note">🤐 Do NOT share this login, worker salaries, or internal business details with anyone.</p>
 </div>
 
@@ -196,6 +207,49 @@ input[type=file] { padding:8px; border:1px dashed #ccc; background:#fafafa; }
 <p id="success-detail" style="margin-top:8px;"></p>
 <button onclick="resetForm()" style="margin-top:12px;padding:8px 20px;background:var(--dark);color:#fff;border:none;border-radius:6px;cursor:pointer;">Submit Another</button>
 </div>
+
+<!-- REPORT MISTAKEN PRODUCTS -->
+<div style="margin-top:32px;border-top:2px dashed var(--gold);padding-top:20px;">
+<h2 style="color:var(--dark);font-size:1.2rem;margin-bottom:4px;">⚠️ Report Mistaken Products</h2>
+<p class="subtitle" style="margin-bottom:16px;">Found a mistake on our website? Paste the link and describe the issue. Owner will review and fix it.</p>
+
+<form id="mistake-form" style="display:none;">
+<div class="form-group">
+<label>Product Link (URL) <span class="required">*</span></label>
+<input type="url" name="product_url" required placeholder="https://store.fofus.in/products/...">
+</div>
+<div class="form-group">
+<label>Your Name <span class="required">*</span></label>
+<input type="text" name="worker_name" required placeholder="Your name">
+</div>
+<div class="form-group">
+<label>What's the mistake? <span class="required">*</span></label>
+<select name="mistake_type" required>
+<option value="">Select...</option>
+<option value="wrong_photo">Wrong photo / image</option>
+<option value="wrong_price">Wrong price</option>
+<option value="wrong_description">Wrong description / title</option>
+<option value="wrong_category">Wrong category / tags</option>
+<option value="broken_page">Broken page / error</option>
+<option value="missing_product">Product missing / out of stock wrongly</option>
+<option value="duplicate_product">Duplicate product listing</option>
+<option value="other">Other (describe below)</option>
+</select>
+</div>
+<div class="form-group">
+<label>Describe the mistake <span class="required">*</span></label>
+<textarea name="description" required rows="3" placeholder="Explain what's wrong with this product page..."></textarea>
+</div>
+<button type="submit" class="btn" id="mistakeBtn" style="background:var(--brown);">Report Mistake →</button>
+</form>
+
+<div class="success" id="mistakeSuccess" style="margin-top:16px;">
+<h3 style="color:#2e7d32;">✅ Mistake Reported!</h3>
+<p id="mistakeSuccessDetail" style="margin-top:8px;"></p>
+<button onclick="resetMistakeForm()" style="margin-top:12px;padding:8px 20px;background:var(--dark);color:#fff;border:none;border-radius:6px;cursor:pointer;">Report Another</button>
+</div>
+</div>
+
 </div>
 
 </div>
@@ -218,6 +272,8 @@ function showLogin() {
 function showIntake() {
     document.getElementById('loginScreen').style.display = 'none';
     document.getElementById('intakeScreen').style.display = 'block';
+    // Show mistake form when logged in
+    document.getElementById('mistake-form').style.display = 'block';
 }
 
 async function doLogin() {
@@ -300,6 +356,44 @@ document.getElementById('intake-form').addEventListener('submit', async (e) => {
     btn.disabled = false;
     btn.textContent = 'Submit Product →';
 });
+
+// ── Mistake form handler ──
+document.getElementById('mistake-form').addEventListener('submit', async (e) => {
+    e.preventDefault();
+    const btn = document.getElementById('mistakeBtn');
+    btn.disabled = true;
+    btn.textContent = 'Reporting...';
+    
+    const formData = new FormData(e.target);
+    try {
+        const resp = await fetch(`${API}/api/v1/products/intake/mistake`, {
+            method: 'POST',
+            body: formData,
+            headers: {'Authorization': `Bearer ${authToken}`}
+        });
+        const result = await resp.json();
+        if (resp.ok) {
+            document.getElementById('mistake-form').style.display = 'none';
+            document.getElementById('mistakeSuccess').style.display = 'block';
+            document.getElementById('mistakeSuccessDetail').textContent = result.message || 'Mistake reported successfully.';
+        } else {
+            let errMsg = 'Report failed';
+            if (result.detail) errMsg = typeof result.detail === 'string' ? result.detail : JSON.stringify(result.detail);
+            alert('Error: ' + errMsg);
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
+        console.error('Mistake report error:', err);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Report Mistake →';
+});
+
+function resetMistakeForm() {
+    document.getElementById('mistake-form').reset();
+    document.getElementById('mistake-form').style.display = 'block';
+    document.getElementById('mistakeSuccess').style.display = 'none';
+}
 </script>
 </body>
 </html>

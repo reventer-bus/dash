@@ -236,3 +236,51 @@ async def get_intake(intake_id: str):
     if not meta_file.exists():
         raise HTTPException(status_code=404, detail="Intake not found")
     return json.loads(meta_file.read_text())
+
+
+# ── Mistaken Product Links ──────────────────────────────────────────
+# Workers can report product URLs on store.fofus.in that have mistakes
+# (wrong photos, wrong prices, wrong descriptions, broken pages, etc.)
+# These are saved to data/intake/mistaken-products.json for owner review.
+
+MISTAKEN_FILE = UPLOAD_DIR / "mistaken-products.json"
+
+
+@router.post("/intake/mistake")
+async def report_mistake(
+    product_url: str = Form(...),
+    worker_name: str = Form(...),
+    mistake_type: str = Form(...),
+    description: str = Form(...),
+):
+    """Report a product link that has a mistake on the website."""
+    # Load existing reports
+    reports = []
+    if MISTAKEN_FILE.exists():
+        reports = json.loads(MISTAKEN_FILE.read_text())
+
+    report = {
+        "id": f"mistake-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+        "product_url": product_url,
+        "worker_name": worker_name,
+        "mistake_type": mistake_type,
+        "description": description,
+        "status": "NEW",
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+
+    reports.append(report)
+    MISTAKEN_FILE.write_text(json.dumps(reports, indent=2))
+
+    logger.info("Mistake reported by %s: %s — %s", worker_name, product_url, mistake_type)
+    return {"status": "ok", "id": report["id"], "message": "Mistake reported. Owner will review."}
+
+
+@router.get("/intake/mistakes/list")
+async def list_mistakes():
+    """List all reported mistaken product links."""
+    if MISTAKEN_FILE.exists():
+        reports = json.loads(MISTAKEN_FILE.read_text())
+    else:
+        reports = []
+    return {"mistakes": reports, "count": len(reports)}

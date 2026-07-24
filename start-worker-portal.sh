@@ -52,34 +52,15 @@ else
     fi
 fi
 
-# 3. Check Tailscale Funnel (online access)
+# 3. Tailscale Funnel DISABLED — was publicly exposing unauthenticated dash
+#    Public access is now via designai.fofus.in (Railway) with AUTH_ENFORCE=true
 echo ""
 if tailscale status >/dev/null 2>&1; then
-    if curl -fsS --max-time 10 "https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/health" >/dev/null 2>&1; then
-        echo "✅ Tailscale Funnel ONLINE — accessible from anywhere"
-        echo "  Worker portal (online): https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/intake"
-    else
-        echo "→ Tailscale active but Funnel not responding, starting..."
-        tailscale funnel --bg --https 443 http://localhost:4322 2>/dev/null || true
-        sleep 3
-        if curl -fsS --max-time 10 "https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/health" >/dev/null 2>&1; then
-            echo "✅ Funnel started — online access available"
-        else
-            echo "⚠️  Funnel not responding — local access only"
-        fi
-    fi
+    echo "✅ Tailscale active (LAN mesh only)"
+    echo "  Public dashboard: https://designai.fofus.in"
+    echo "  Worker portal:   https://portal.fofus.in"
 else
-    echo "→ Tailscale not running, starting..."
-    sudo systemctl start tailscaled 2>/dev/null || true
-    tailscale up 2>/dev/null || true
-    sleep 3
-    tailscale funnel --bg --https 443 http://localhost:4322 2>/dev/null || true
-    sleep 3
-    if curl -fsS --max-time 10 "https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/health" >/dev/null 2>&1; then
-        echo "✅ Tailscale + Funnel started — online access available"
-    else
-        echo "⚠️  Tailscale failed — local access only"
-    fi
+    echo "⚠️  Tailscale not running — local access only"
 fi
 
 # 3. Open worker portal in browser

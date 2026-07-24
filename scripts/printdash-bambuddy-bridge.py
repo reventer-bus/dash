@@ -38,7 +38,7 @@ from pathlib import Path
 # Configuration
 # ──────────────────────────────────────────────────────────────────────
 
-PRINTDASH_BASE = os.environ.get("PRINTDASH_BASE", "https://printdash-production.up.railway.app")
+PRINTDASH_BASE = os.environ.get("PRINTDASH_BASE", "https://designai.fofus.in")
 BAMBUDDY_BASE  = os.environ.get("BAMBUDDY_BASE",  "http://localhost:8000")
 
 # Bambuddy JWT auth credentials — the API requires Bearer token auth.

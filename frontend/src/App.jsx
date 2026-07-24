@@ -2,15 +2,7 @@ import { useState, useEffect } from 'react'
 import Dashboard from './Dashboard.jsx'
 import { login, logout, getUser, getToken, bootstrapNeeded, bootstrapAdmin } from './auth.js'
 
-// Legacy gate — kept as a fallback so the deployed partner login
-// (client_id / client_id_PARTNER, no JWT) keeps working until every
-// account is migrated to a real user row. Anything with an '@' goes
-// through JWT auth instead.
-const CREDENTIALS = {
-  username: import.meta.env.VITE_LOGIN_USER || '101',
-  password: import.meta.env.VITE_LOGIN_PASS || '101_3DDEVINE',
-}
-
+// Auth is JWT-only now. Legacy client_id gate removed for security.
 const SESSION_KEY = 'pd_authed'
 const API = import.meta.env.VITE_API_URL ?? ''
 
@@ -53,19 +45,9 @@ function LoginScreen({ onAuth }) {
         onAuth(profile)
         return
       }
-      if (user.includes('@')) {
-        // Real account → JWT via the backend users table
-        const profile = await login(API, user, pass)
-        onAuth(profile)
-        return
-      }
-      // Legacy client_id gate (no JWT, unscoped API access)
-      if (user === CREDENTIALS.username && pass === CREDENTIALS.password) {
-        sessionStorage.setItem(SESSION_KEY, '1')
-        onAuth(null)
-        return
-      }
-      setError('Invalid username or password')
+      // JWT auth only — no legacy bypass
+      const profile = await login(API, user, pass)
+      onAuth(profile)
     } catch (err) {
       setError(String(err.message || err))
     } finally {
@@ -147,38 +129,34 @@ function LoginScreen({ onAuth }) {
 }
 
 export default function App() {
-  // Two auth modes: JWT (pd_token + pd_user in localStorage) or the legacy
-  // sessionStorage gate. JWT wins when both are present.
+  // JWT auth only — legacy sessionStorage gate removed
   const [authUser, setAuthUser] = useState(() => (getToken() ? getUser() : null))
-  const [legacyAuthed, setLegacyAuthed] = useState(() => sessionStorage.getItem(SESSION_KEY) === '1')
+
+  // Clear any stale legacy session
+  useEffect(() => {
+    sessionStorage.removeItem('pd_authed')
+  }, [])
 
   const handleAuth = (profile) => {
     if (profile) setAuthUser(profile)
-    else setLegacyAuthed(true)
   }
 
   const handleLogout = () => {
     logout()
     setAuthUser(null)
-    setLegacyAuthed(false)
   }
 
-  if (!authUser && !legacyAuthed) {
+  if (!authUser) {
     return <LoginScreen onAuth={handleAuth} />
   }
 
-  if (authUser) {
-    const isAdmin = authUser.role === 'super_admin'
-    return (
-      <Dashboard
-        authUser={authUser}
-        onLogout={handleLogout}
-        adminMode={isAdmin}
-        partnerScopeOnly={!isAdmin}
-      />
-    )
-  }
-
-  // Legacy gate — same behavior as before JWT existed
-  return <Dashboard onLogout={handleLogout} />
+  const isAdmin = authUser.role === 'super_admin'
+  return (
+    <Dashboard
+      authUser={authUser}
+      onLogout={handleLogout}
+      adminMode={isAdmin}
+      partnerScopeOnly={!isAdmin}
+    />
+  )
 }

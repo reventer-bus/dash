@@ -105,12 +105,13 @@ dash/
 | PrintDash Health Check | Cron | every 30min → `dash/scripts/printdash-health-check.py` | ✅ Live (Jul 18) |
 | Franchise onboarding | Script | `dash/scripts/franchise-onboard.py` | ✅ Live (Jul 18) |
 | Franchise printer map | JSON | `dash/scripts/franchise-printer-map.json` | ✅ 1 franchise (101-3Ddevine) |
-| PrintDash backend (Railway) | Railway | `https://printdash-production.up.railway.app` → `print.business.fofus.in` | ✅ Live (Jul 20, cert pending) |
+| PrintDash backend (Railway) | Railway | `https://designai.fofus.in` + `https://design.fofus.in` → `fofus-websites-production.up.railway.app` | ✅ Live (Jul 24, GitHub auto-deploy) |
 | PrintDash database (Postgres) | Railway | `postgres.railway.internal:5432` | ✅ Live (Jul 20) |
-| FOFUS Quote (Railway) | Railway | `https://fofus-quote.fofus.in` → `bgq6sew5.up.railway.app` | ✅ Live (Jul 20, cert pending) |
+| FOFUS Quote (Railway) | Railway | `https://quote.fofus.in` → `fofus-quote-production-309b.up.railway.app` | ✅ Live (Jul 24, GitHub auto-deploy) |
 | FOFUS Quote volume | Railway Volume | `/app/data` (500 MB) | ✅ Live (Jul 20) |
 | FOFUS CEO (agni-ceo) | **Hermes OS** | `~/hermes-os/fofus/ceo/` / `~/fofus/ops/ceo_dashboard.py` | ✅ Resident in Hermes OS, **not Railway** |
-| FOFUS Worker Portal | Railway (PrintDash backend) | `https://print.business.fofus.in/intake` | ✅ Live (Jul 21, intake verified end-to-end) |
+| FOFUS Worker Portal | Railway | `https://portal.fofus.in` → `fofus-worker-portal-production.up.railway.app` | ✅ Live (Jul 24, GitHub auto-deploy, session auth) |
+| Printer Status Bridge | systemd | `printdash-bridge-pusher.service` (30s interval) → `designai.fofus.in/api/v1/bridge/printers/status` | ✅ Live (Jul 24) |
 
 ### Bambuddy/FOFUS Integration (Jul 18, rebranded Jul 20) — SCOPE LOCK (Jul 21)
 

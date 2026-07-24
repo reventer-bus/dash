@@ -448,6 +448,35 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 - [x] **Railway Dockerfile** — `Dockerfile.railway` (multi-stage: frontend build + backend)
 - [x] **Railway config** — `railway.toml` + `.env.railway`
 - [x] **Bridge installer** — `install.sh` / `uninstall.sh` / `bridge-config.json` / `README.md`
-- [ ] **Railway deploy** — user login + push code + set env vars
-- [ ] **Bridge config** — update `bridge-config.json` with Railway URL after deploy
-- [ ] **Start bridge** — `./install.sh` on laptop
+- [x] **Railway deploy** — user login + push code + set env vars
+- [x] **Bridge config** — update `bridge-config.json` with Railway URL after deploy
+- [x] **Start bridge** — `./install.sh` on laptop
+- [x] **Bridge pusher service** — `printdash-bridge-pusher.service` (systemd, 30s interval)
+  Pushes Bambuddy printer status to designai.fofus.in via `/api/v1/bridge/printers/status`
+- [x] **PRINTDASH_BASE updated** — `printdash-bambuddy-bridge.py` now points to `https://designai.fofus.in`
+- [x] **Worker portal auth** — session validation, role-based access, admin endpoints
+- [x] **GitHub auto-deploy** — all 3 repos connected (dash, fofus-quote, fofus-worker-portal)
+- [x] **Custom domains live** — design.fofus.in, designai.fofus.in, quote.fofus.in, portal.fofus.in (all 200)
+- [x] **AUTH_ENFORCE=true** — dash API now rejects anonymous access on protected endpoints
+- [x] **Bootstrap super_admin** — create first admin account at designai.fofus.in
+- [ ] **Old domains cleanup** — remove quote.business.fofus.in + print.business.fofus.in from old Railway account
+
+## Shopify Integration (Jul 24)
+
+- [x] **Shopify webhooks registered** — orders/paid + orders/create → `https://designai.fofus.in/api/v1/shopify/webhook`
+- [x] **Webhook HMAC verification** — tested with real payload, 200 OK, order queued in farm
+- [x] **Env vars fixed on Railway** — SHOPIFY_WEBHOOK_SECRET (full 64-char), SHOPIFY_DOMAIN=q1udf0-1s.myshopify.com
+- [x] **Orders API** — token can read orders, products, webhooks
+- [ ] **Checkout endpoint** — needs `write_draft_orders` scope on Shopify token (draft order creation fails 502)
+- [ ] **Shopify token scope upgrade** — regenerate token with write_draft_orders, write_inventory scopes
+
+## Security Fix: Tailscale Funnel Exposure (Jul 24)
+
+- [x] **Funnel turned OFF** — both endpoints (port 443 + port 10000) publicly exposed local dash without auth
+- [x] **AUTH_ENFORCE=true on local dash** — `/home/reventer/dash/backend/.env` + `/home/reventer/dash/.env`
+- [x] **Local dash auth verified** — /api/v1/farm/queue returns 401 "Missing bearer token"
+- [x] **Railway designai.fofus.in auth verified** — same 401 response
+- [x] **Old funnel URL dead** — https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net returns empty (connection refused)
+- [x] **/health remains open** — health checks still work without auth (by design)
+- [ ] **Update Shopify webhooks** — webhooks currently point to designai.fofus.in (Railway), not the old funnel URL
+- [ ] **Remove old funnel references** from PRINTER-CREDENTIALS.md and start-worker-portal.sh

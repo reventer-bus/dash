@@ -27,7 +27,7 @@ COPY --from=frontend-builder /frontend/dist ./frontend/dist
 
 ENV DATABASE_URL="sqlite+aiosqlite:///./makerai.db" \
     REDIS_URL="" \
-    AUTH_ENFORCE=false \
+    AUTH_ENFORCE=true \
     MAKER_AI_DIR="/tmp/maker-ai" \
     BRIDGE_TOKEN="fofus-bridge-2026-secure" \
     PORT=8000

@@ -13,13 +13,13 @@
 dash/
 ├── frontend/          ← React/Vite partner Kanban dashboard (Vercel)
 │   ├── src/
-│   │   ├── App.jsx          ← Login gate + root (JWT + legacy fallback)
+│   │   ├── App.jsx          ← Login gate + root (JWT-only, legacy bypass removed Jul 24)
 │   │   ├── Dashboard.jsx    ← Kanban (with search/filter), Messages panel, analytics, printers, slicer, inventory
 │   │   ├── auth.js          ← JWT login + global fetch interceptor (Bearer token on all /api/ calls)
 │   ├── vercel.json
 │   └── package.json
 │
-├── backend/           ← FastAPI server (Ubuntu + Tailscale Funnel)
+├── backend/           ← FastAPI server (Ubuntu local + Railway cloud)
 │   ├── app/
 │   │   ├── main.py                    ← App init, CORS, route registration
 │   │   ├── api/v1/endpoints/
@@ -83,7 +83,7 @@ dash/
 | Service | Platform | URL / Location | Status |
 |---------|----------|----------------|--------|
 | Partner dashboard (printdash) | Vercel | `https://printdash-by3crk255-reventers-projects.vercel.app` (alias: `busienss.fofus.in`) | ✅ Live (2026-06-26) |
-| Backend API | Ubuntu server + Tailscale Funnel | `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net` (port 4322) | ✅ Live (2026-06-27, Shopify webhooks registered + HMAC verified) |
+| Backend API | Railway (designai.fofus.in) | `https://designai.fofus.in` (AUTH_ENFORCE=true, JWT-only) | ✅ Live (Jul 24, Shopify webhooks registered + HMAC verified) |
 | Shopify store | Shopify | `store.fofus.in` | ✅ Live |
 | n8n workflows | n8n Cloud | `gni123.app.n8n.cloud` | ✅ Live (Shopify cred pending) |
 | Slicer (OrcaSlicer CLI) | Hetzner CX32 VPS | Docker container | ✅ Live |
@@ -95,7 +95,7 @@ dash/
 | Customer tracking | Vercel | `track.fofus.in` | 🔲 Not built |
 | Database | PostgreSQL | Railway or Ubuntu Docker | ⚠️ Needed |
 | Mesh VPN | Tailscale | `fofus-mesh` tailnet | 🔲 Set up for backend; Pi nodes TBD |
-| FOFUS Portal | Ubuntu + Tailscale Funnel | `localhost:4321` → `https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net/` | ✅ Live (Jul 20, rebranded as FOFUS) |
+| FOFUS Portal | Railway (portal.fofus.in) | `https://portal.fofus.in` | ✅ Live (Jul 24) |
 | Bambuddy (FOFUS printer control) | Docker | `localhost:8000` | ✅ Live (Jul 20, rebranded as FOFUS) |
 | GitHub backup | GitHub | `reventer-bus/bambuddy-backup` (private) | ✅ Live (Jul 18, daily schedule) |
 | Local backup | Disk | `bambuddy-backup-*.zip` | ✅ Live (Jul 18, daily 03:00) |
@@ -185,9 +185,12 @@ Next items (see PLAN.md):
   • Prepare account for paid Google Shopping campaigns
 ```
 
-### Backend Hosting (Ubuntu + Tailscale Funnel)
+### Backend Hosting (Railway + local dev)
 
-**Current live setup (2026-06-26):**
+**Current live setup (2026-07-24):**
+- **Railway (production):** `designai.fofus.in` — FastAPI + pre-built frontend, AUTH_ENFORCE=true
+- **Local dev:** `127.0.0.1:4322` — uvicorn from `.venv`, AUTH_ENFORCE=true
+- **Tailscale Funnel: DISABLED** — was publicly exposing unauthenticated dash (removed Jul 24)
 ```
 # Backend runs on port 4322, data dir ~/dash/data
 cd ~/dash/backend

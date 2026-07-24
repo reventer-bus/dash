@@ -13,8 +13,8 @@ COPY backend/requirements.txt ./requirements.txt
 RUN pip install --no-cache-dir -r requirements.txt
 
 COPY backend/app ./app
-# Copy pre-built frontend (committed to repo) — renamed dir to bust Docker cache
-COPY frontend/dist-prod/ ./frontend/dist/
+# Copy pre-built frontend (committed to repo)
+COPY frontend/dist/ ./frontend/dist/
 
 ENV DATABASE_URL="sqlite+aiosqlite:///./makerai.db" \
     REDIS_URL="" \

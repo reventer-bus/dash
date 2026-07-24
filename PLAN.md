@@ -164,9 +164,9 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 - [x] `require_role()` dependency factory for endpoint-level role gating
 - [x] Endpoint-level `partner_id` scoping in `farm.py`: partner-scoped tokens only see/touch their own orders (`/status`, `/queue`, `/analytics`, PATCH, attachments, comments, print-attempts → 403 on foreign orders); assignment/cleanup endpoints are super_admin-only
 - [x] Registration hardened: anonymous signups are forced to role `partner` (only super_admin creates staff; first-ever account may bootstrap super_admin); registering with a new `partner_id` get-or-creates the Partner row
-- [x] Frontend JWT login (Jul 05): login screen accepts email → `POST /auth/login`, stores `pd_token`, and a global fetch interceptor (`frontend/src/auth.js`) sends the Bearer header on every API call. First-run bootstrap: when the users table is empty the login screen offers super_admin creation (`GET /auth/bootstrap-needed`). Legacy client-ID gate (`101` / env creds) kept as fallback until all accounts are migrated.
+- [x] Frontend JWT login (Jul 05): login screen accepts email → `POST /auth/login`, stores `pd_token`, and a global fetch interceptor (`frontend/src/auth.js`) sends the Bearer header on every API call. First-run bootstrap: when the users table is empty the login screen offers super_admin creation (`GET /auth/bootstrap-needed`). **Legacy client-ID gate removed Jul 24 — JWT-only login now.**
 - [x] `/api/v1/admin/users` endpoints added (GET/POST/DELETE, always super_admin-JWT, no anonymous mode) — the Partners tab called these since before the backend existed; it 404'd until now. Delete = soft-deactivate (login blocked, history preserved); self-deactivation blocked.
-- [ ] **Flip `AUTH_ENFORCE=true`** (env) after deploying and creating real accounts for everyone — the legacy client-ID gate sends no JWT, so flipping the flag retires it. Until then anonymous calls stay unscoped exactly as before Phase 1.
+- [x] **AUTH_ENFORCE=true** flipped (Jul 24) — legacy client-ID gate removed, JWT-only login enforced everywhere
 
 ---
 
@@ -478,5 +478,12 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 - [x] **Railway designai.fofus.in auth verified** — same 401 response
 - [x] **Old funnel URL dead** — https://reventer-b550m-ds3h-ac.tailaf82d9.ts.net returns empty (connection refused)
 - [x] **/health remains open** — health checks still work without auth (by design)
-- [ ] **Update Shopify webhooks** — webhooks currently point to designai.fofus.in (Railway), not the old funnel URL
-- [ ] **Remove old funnel references** from PRINTER-CREDENTIALS.md and start-worker-portal.sh
+- [x] **Legacy auth bypass removed** — hardcoded credentials (101/101_3DDEVINE) removed from App.jsx, sessionStorage gate deleted, JWT-only login enforced
+- [x] **Dockerfile AUTH_ENFORCE=true** — default in Dockerfile.railway changed from false to true
+- [x] **Frontend rebuilt and deployed** — new build index-DexJfiyb.js live on Railway (0 occurrences of legacy password)
+- [x] **GitHub webhook created** — push events auto-trigger Railway deploy (was missing, caused stale deploys)
+- [x] **Pre-built frontend committed to repo** — Dockerfile copies dist/ directly, no Node.js build stage needed
+- [x] **Shopify webhooks point to designai.fofus.in** — orders/paid + orders/create registered and verified
+- [x] **Funnel auto-start removed** from start-worker-portal.sh
+- [ ] **Bootstrap super_admin** — visit designai.fofus.in, first run shows "Create Admin" form
+- [ ] **Upgrade Shopify token scopes** — add write_draft_orders in Shopify Admin

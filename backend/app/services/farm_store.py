@@ -141,10 +141,12 @@ async def startup_load():
         from app.core.database import Base
         from app.models.user import User
         from app.models.partner import Partner as PartnerModel
+        from app.models.wallet import Wallet, WalletTxn
         farm_tables = [
             Order.__table__, Printer.__table__, Spool.__table__,
             FeedbackEntry.__table__, OrderComment.__table__,
             User.__table__, PartnerModel.__table__,
+            Wallet.__table__, WalletTxn.__table__,
         ]
         async with engine.begin() as conn:
             await conn.run_sync(lambda sync: Base.metadata.create_all(sync, tables=farm_tables))

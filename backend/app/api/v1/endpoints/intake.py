@@ -88,31 +88,54 @@ def _git_backup(folder_name: str) -> dict:
 class ProductIntake(BaseModel):
     """Product submission from a worker."""
     product_name: str
+    brand: str = "FOFUS"
     category: str  # Decor, Religious, Gifts, Anime, STEM, Custom
     description: str
     keywords: str = ""
     material: str = "PLA"
     price_inr: float
+    sale_price_inr: Optional[float] = None
     print_time_hours: Optional[float] = None
     amazon_category: Optional[str] = None
     amazon_bullet_points: Optional[str] = None
     worker_name: str
     notes: Optional[str] = None
+    # Product specifications
+    length_mm: Optional[float] = None
+    width_mm: Optional[float] = None
+    height_mm: Optional[float] = None
+    weight_g: Optional[float] = None
+    color_finish: Optional[str] = None
+    layer_height: Optional[str] = None
+    print_difficulty: Optional[str] = None
+    gtin: Optional[str] = None
+    customization: Optional[str] = None
 
 
 @router.post("/intake")
 async def product_intake(
     product_name: str = Form(...),
+    brand: str = Form("FOFUS"),
     category: str = Form(...),
     description: str = Form(...),
     keywords: str = Form(""),
     material: str = Form("PLA"),
     price_inr: float = Form(...),
+    sale_price_inr: Optional[float] = Form(None),
     print_time_hours: Optional[float] = Form(None),
     amazon_category: Optional[str] = Form(None),
     amazon_bullet_points: Optional[str] = Form(None),
     worker_name: str = Form(...),
     notes: Optional[str] = Form(None),
+    length_mm: Optional[float] = Form(None),
+    width_mm: Optional[float] = Form(None),
+    height_mm: Optional[float] = Form(None),
+    weight_g: Optional[float] = Form(None),
+    color_finish: Optional[str] = Form(None),
+    layer_height: Optional[str] = Form(None),
+    print_difficulty: Optional[str] = Form(None),
+    gtin: Optional[str] = Form(None),
+    customization: Optional[str] = Form(None),
     model_file: UploadFile = File(...),
     photo1: Optional[UploadFile] = File(None),
     photo2: Optional[UploadFile] = File(None),
@@ -149,11 +172,13 @@ async def product_intake(
         "id": f"intake-{ts}",
         "type": "product_intake",
         "product_name": product_name,
+        "brand": brand,
         "category": category,
         "description": description,
         "keywords": keywords,
         "material": material,
         "price_inr": price_inr,
+        "sale_price_inr": sale_price_inr,
         "print_time_hours": print_time_hours,
         "amazon_category": amazon_category,
         "amazon_bullet_points": amazon_bullet_points,
@@ -163,6 +188,16 @@ async def product_intake(
         "photos": saved_photos,
         "status": "NEW",
         "created_at": datetime.now(timezone.utc).isoformat(),
+        # Product specifications
+        "length_mm": length_mm,
+        "width_mm": width_mm,
+        "height_mm": height_mm,
+        "weight_g": weight_g,
+        "color_finish": color_finish,
+        "layer_height": layer_height,
+        "print_difficulty": print_difficulty,
+        "gtin": gtin,
+        "customization": customization,
     }
 
     # Save metadata JSON
@@ -192,6 +227,30 @@ async def product_intake(
 
     await farm_store.add_order(order)
 
+    # Award coins to the worker for this submission
+    coins_earned = 0
+    try:
+        from app.services import wallet_service
+        # Find the user by worker_name to get their user_id
+        from sqlalchemy import select
+        from app.models.user import User
+        from app.core.database import session_scope
+        async with session_scope() as s:
+            # Match by name — workers are registered with their real name
+            result = await s.execute(
+                select(User).where(User.name.ilike(f"%{worker_name}%"))
+            )
+            user = result.scalar_one_or_none()
+            if user:
+                w = await wallet_service.earn_coins(
+                    user_id=user.id,
+                    reason="product_submission",
+                    ref_id=record["id"],
+                )
+                coins_earned = w["last_txn"]["amount"]
+    except Exception as e:
+        logger.warning("Could not award coins to %s: %s", worker_name, e)
+
     # Backup to GitHub — protects against power loss / disk failure
     git_result = _git_backup(ts)
 
@@ -203,6 +262,7 @@ async def product_intake(
         "model_file": str(model_path),
         "photos": saved_photos,
         "github_backup": git_result,
+        "coins_earned": coins_earned,
     }
 
 
@@ -218,9 +278,13 @@ async def list_intakes():
                 intakes.append({
                     "id": record["id"],
                     "product_name": record["product_name"],
+                    "brand": record.get("brand", "FOFUS"),
                     "category": record["category"],
                     "worker_name": record["worker_name"],
                     "price_inr": record["price_inr"],
+                    "height_mm": record.get("height_mm"),
+                    "weight_g": record.get("weight_g"),
+                    "color_finish": record.get("color_finish"),
                     "status": record["status"],
                     "created_at": record["created_at"],
                     "folder": str(folder),
@@ -273,7 +337,28 @@ async def report_mistake(
     MISTAKEN_FILE.write_text(json.dumps(reports, indent=2))
 
     logger.info("Mistake reported by %s: %s — %s", worker_name, product_url, mistake_type)
-    return {"status": "ok", "id": report["id"], "message": "Mistake reported. Owner will review."}
+
+    # Award coins for mistake report (confirmed by admin later)
+    coins_earned = 0
+    try:
+        from app.services import wallet_service
+        from sqlalchemy import select as sel
+        from app.models.user import User
+        from app.core.database import session_scope as ss
+        async with ss() as s:
+            result = await s.execute(sel(User).where(User.name.ilike(f"%{worker_name}%")))
+            user = result.scalar_one_or_none()
+            if user:
+                w = await wallet_service.earn_coins(
+                    user_id=user.id,
+                    reason="mistake_report",
+                    ref_id=report["id"],
+                )
+                coins_earned = w["last_txn"]["amount"]
+    except Exception as e:
+        logger.warning("Could not award coins for mistake report: %s", e)
+
+    return {"status": "ok", "id": report["id"], "message": "Mistake reported. Owner will review.", "coins_earned": coins_earned}
 
 
 @router.get("/intake/mistakes/list")
@@ -284,3 +369,75 @@ async def list_mistakes():
     else:
         reports = []
     return {"mistakes": reports, "count": len(reports)}
+
+
+# ── Product Assignment Queue ───────────────────────────────────────
+# Executive team (AGNI agents) assign specific products to workers
+# with exact model links, so workers don't have to search themselves.
+
+ASSIGNMENTS_FILE = UPLOAD_DIR / "product-assignments.json"
+
+
+def _load_assignments():
+    if ASSIGNMENTS_FILE.exists():
+        return json.loads(ASSIGNMENTS_FILE.read_text())
+    return []
+
+
+def _save_assignments(assignments):
+    ASSIGNMENTS_FILE.write_text(json.dumps(assignments, indent=2))
+
+
+class ProductAssignment(BaseModel):
+    """Product assignment from executive team → worker."""
+    product_name: str
+    category: str
+    description: str
+    model_url: str  # MakerWorld / Printables / Thingiverse / direct STL
+    model_license: str = "Don't know"
+    suggested_price: Optional[float] = None
+    material: str = "PLA"
+    color_finish: Optional[str] = None
+    customization: Optional[str] = None
+    assigned_to: str = "John"  # worker name
+    assigned_by: str = "executive"  # agent name
+    notes: Optional[str] = None
+    reference_url: Optional[str] = None  # where the idea came from (Etsy, Instagram, etc.)
+
+
+@router.post("/intake/assign")
+async def create_assignment(a: ProductAssignment):
+    """Executive team assigns a specific product to a worker with a model link."""
+    assignments = _load_assignments()
+    assignment = {
+        "id": f"assign-{datetime.now(timezone.utc).strftime('%Y%m%d-%H%M%S')}",
+        **a.model_dump(),
+        "status": "PENDING",  # PENDING → DOWNLOADED → SUBMITTED → SKIPPED
+        "created_at": datetime.now(timezone.utc).isoformat(),
+    }
+    assignments.append(assignment)
+    _save_assignments(assignments)
+    logger.info("Assignment created: %s → %s (model: %s)", a.product_name, a.assigned_to, a.model_url)
+    return {"status": "ok", "id": assignment["id"], "assignment": assignment}
+
+
+@router.get("/intake/assignments")
+async def list_assignments(worker: Optional[str] = None):
+    """List product assignments. Optional: filter by worker name."""
+    assignments = _load_assignments()
+    if worker:
+        assignments = [a for a in assignments if a["assigned_to"].lower() == worker.lower()]
+    return {"assignments": assignments, "count": len(assignments)}
+
+
+@router.post("/intake/assignments/{assignment_id}/status")
+async def update_assignment_status(assignment_id: str, status: str = Form(...)):
+    """Update assignment status (DOWNLOADED, SUBMITTED, SKIPPED)."""
+    assignments = _load_assignments()
+    for a in assignments:
+        if a["id"] == assignment_id:
+            a["status"] = status
+            a["updated_at"] = datetime.now(timezone.utc).isoformat()
+            _save_assignments(assignments)
+            return {"status": "ok", "assignment": a}
+    raise HTTPException(status_code=404, detail="Assignment not found")

@@ -4,6 +4,9 @@
 > **Stack:** FastAPI backend · React/Vite partner dashboard · Next.js customer portal · n8n automation · Bambu printers
 > **First franchise:** `101-3ddevine.platform.fofus.in` (3D Devine, Thrissur)
 > **Company:** GNI Labs LLP · GST 32ABBFG541K1ZM · Irinjalakuda, Thrissur, Kerala
+> **Scope lock (Jul 21, 2026):** Bambuddy is the single source of truth for printer dashboard, print management, and filament management. No parallel build inside PrintDash. Marketing priority: Google Shopping product visibility.
+>
+> **Strategic pivot (Jul 21, 2026):** Engineering integration is frozen around Bambuddy. All new AGNI effort shifts to getting FOFUS products showing up on Google — Google Merchant Center, Shopping tab, product feed, and SEO-optimized product pages.
 
 ---
 
@@ -126,6 +129,7 @@ Dispatch → Shopify fulfillment + Shiprocket label + WhatsApp customer notifica
 - [x] **Railway domain verification + TLS cert issuance** for `print.business.fofus.in` — ACTIVE (Jul 21)
 - [ ] **Railway domain verification + TLS cert issuance** for `quote.business.fofus.in` — pending propagation
 - [x] **FOFUS Worker Portal exposed on Railway** — `https://print.business.fofus.in/intake`, end-to-end intake submission verified
+- [x] **Worker intake form expanded** — added Brand, Product Specifications section (length, width, height, weight, color/finish, layer height, print difficulty, MRP + selling price, GTIN, customization) to HTML form + backend intake.py (Jul 22)
 
 ---
 
@@ -405,7 +409,9 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 - [ ] **Inventory fix** — Shopify token lacks inventory write scope. Stock needs manual fix in Shopify admin: Large (-3→5), Small (-2→5), Shankaracharya (-2→3)
 - [x] **Instagram giveaway** — user wants giveaway with dead stock Bharathan idol
 
-## Google Shopping + Amazon Listing (Jul 18)
+## Google Shopping + Amazon Listing (Jul 18) — ELEVATED TO PRIMARY MARKETING FOCUS (Jul 21)
+
+**Owner directive:** Bambuddy/print-management/filament integration is locked. AGNI focus is now Google Shopping — get FOFUS products to show up when people search on Google.
 
 - [x] **Google Shopping channel** — products already published to Google & YouTube channel ✅
 - [x] **SKU assigned** — Large: 3DD-SB-LRG-15CM, Small: 3DD-SB-SML-10CM, Bundle: 3DD-SBSH-BNDL
@@ -420,7 +426,11 @@ Par filament stock per node: 3× PLA White, 2× PLA Silk Gold, 4× PLA Multicolo
 - [x] **Bundle composite image** — created and uploaded to Shopify (Image ID: 68204225560947)
 - [ ] **Inventory fix** — Shopify token lacks inventory write scope. Stock needs manual fix: Large (-3→5), Small (-2→5), Shankaracharya (-2→3), Bundle (0→3)
 - [ ] **Amazon listing** — user needs to list via Amazon Seller Central or Shopify Marketplace Connect manually
-- [ ] **Google Shopping feed** — sync via Shopify Google & YouTube channel (automatic, may take 24-48h)
+- [ ] **Google Shopping feed sync verified** — confirm Google Merchant Center feed status and fix any disapprovals
+- [ ] **Google Shopping search visibility** — query "Sangameshan Bharathan idol" / "3D printed Krishna idol Kerala" on Google and confirm Shopping tab shows FOFUS
+- [ ] **Product feed expansion** — push more FOFUS SKUs (idols, custom prints, candle kits, 3D scanning) to Google Shopping
+- [ ] **Shopping ad readiness** — verify GMC account, shipping/tax settings, and policy pages so paid Shopping campaigns can launch
+- [ ] **SEO product pages** — ensure every Google Shopping product has a matching SEO-optimized landing page on `store.fofus.in`
 
 ## AI Character Engine — Hermes OS (Jul 18)
 

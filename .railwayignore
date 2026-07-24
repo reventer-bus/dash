@@ -1,0 +1,12 @@
+node_modules
+__pycache__
+*.pyc
+.git
+data
+logs
+*.db
+.env
+.env.*
+*.log
+.venv
+ai-venv

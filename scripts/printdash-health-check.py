@@ -3,7 +3,7 @@
 PrintDash Unified Health Check
 ==============================
 Checks all 3 PrintDash services:
-  1. Portal      (:4320) — unified entry point
+  1. Portal      (:4321) — unified entry point
   2. Printdash   (:4322) — farm dashboard + API
   3. Bambuddy    (:8000) — printer control (Docker container)
 
@@ -38,13 +38,13 @@ def check(name, ok, detail=""):
 def warn(name, detail=""):
     WARNINGS.append(f"⚠️  {name}: {detail}")
 
-# --- 1. Portal (:4320) ---
+# --- 1. Portal (:4321) ---
 try:
-    r = urllib.request.urlopen("http://localhost:4320/", timeout=5)
+    r = urllib.request.urlopen("http://localhost:4321/", timeout=5)
     html = r.read().decode()
-    check("Portal (:4320)", r.status == 200 and "PrintDash" in html, f"HTTP {r.status}, branding OK")
+    check("Portal (:4321)", r.status == 200 and "FOFUS" in html, f"HTTP {r.status}, branding OK")
 except Exception as e:
-    check("Portal (:4320)", False, str(e))
+    check("Portal (:4321)", False, str(e))
 
 # --- 2. Printdash API (:4322) ---
 try:
@@ -58,7 +58,7 @@ except Exception as e:
 try:
     r = urllib.request.urlopen("http://localhost:4322/", timeout=5)
     html = r.read().decode()
-    check("Printdash frontend", "PrintDash" in html, "branding present")
+    check("Printdash frontend", "FOFUS" in html, "FOFUS branding present")
 except Exception as e:
     check("Printdash frontend", False, str(e))
 
@@ -66,16 +66,33 @@ except Exception as e:
 try:
     r = urllib.request.urlopen("http://localhost:8000/", timeout=5)
     html = r.read().decode()
-    check("Bambuddy (:8000)", r.status == 200 and "PrintDash" in html, "rebranded, HTTP 200")
+    check("Bambuddy (:8000)", r.status == 200 and "FOFUS" in html, "rebranded, HTTP 200")
 except Exception as e:
     check("Bambuddy (:8000)", False, str(e))
 
-# --- 5. Bambuddy API ---
+# --- 5. Bambuddy API (with auth) ---
 try:
-    r = urllib.request.urlopen("http://localhost:8000/api/v1/printers/", timeout=5)
+    # Login to get JWT token
+    login_data = json.dumps({"username": "shaju@fofus.in", "password": "123456"}).encode()
+    req = urllib.request.Request(
+        "http://localhost:8000/api/v1/auth/login",
+        data=login_data,
+        headers={"Content-Type": "application/json"},
+        method="POST"
+    )
+    lr = urllib.request.urlopen(req, timeout=5)
+    login_resp = json.loads(lr.read())
+    token = login_resp.get("access_token")
+
+    # Use token to fetch printers
+    api_req = urllib.request.Request(
+        "http://localhost:8000/api/v1/printers/",
+        headers={"Authorization": f"Bearer {token}"}
+    )
+    r = urllib.request.urlopen(api_req, timeout=5)
     d = json.loads(r.read())
     printer_count = len(d) if isinstance(d, list) else len(d.get("printers", d.get("data", [])))
-    check("Bambuddy API", isinstance(d, (list, dict)), f"{printer_count} printers")
+    check("Bambuddy API", isinstance(d, (list, dict)), f"{printer_count} printers (authed)")
 except Exception as e:
     check("Bambuddy API", False, str(e))
 

@@ -5,7 +5,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse, PlainTextResponse, Response
 
-from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify, admin_users, chat, intake, orderflow, camera, bridge
+from app.api.v1.endpoints import printers, orders, files, partners, ai, auth, farm, slicer, pricing, shopify, admin_users, chat, intake, orderflow, camera, bridge, wallet
 from app.services import farm_store
 
 
@@ -76,6 +76,9 @@ app.include_router(camera.router, prefix="/api/v1/cameras", tags=["cameras"])
 
 # Bridge — local laptop bridge service pushes printer status, pulls commands
 app.include_router(bridge.router, prefix="/api/v1/bridge", tags=["bridge"])
+
+# Worker coin wallet
+app.include_router(wallet.router, prefix="/api/v1/wallet", tags=["wallet"])
 
 # Static files — worker intake form
 STATIC_DIR = Path(__file__).parent / "static"

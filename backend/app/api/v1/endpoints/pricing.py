@@ -14,7 +14,7 @@ class PriceRequest(BaseModel):
     material: str = Field("PLA", description="Filament type, e.g. PLA, PETG, ABS")
     weight_g: float = Field(..., gt=0, description="Filament weight in grams")
     print_time_min: float = Field(..., gt=0, description="Estimated print time in minutes")
-    machine: str = Field("BambuA1", description="Printer model, e.g. BambuA1, X1C, K1Max")
+    machine: str = Field("ALA-Standard", description="Printer model, e.g. ALA-Standard, ALA-Engineering, ALA-Large")
 
 
 class PriceResponse(BaseModel):

@@ -54,7 +54,7 @@ input[type=file] { padding:8px; border:1px dashed #ccc; background:#fafafa; }
 <p class="subtitle">Login to submit products</p>
 <div class="form-group">
 <label>Email <span class="required">*</span></label>
-<input type="email" id="loginEmail" placeholder="worker1@fofus.in" required>
+<input type="email" id="loginEmail" placeholder="jhon@fofus.in" required>
 </div>
 <div class="form-group">
 <label>Password <span class="required">*</span></label>
@@ -95,12 +95,63 @@ input[type=file] { padding:8px; border:1px dashed #ccc; background:#fafafa; }
   <p class="task-note">🤐 Do NOT share this login, worker salaries, or internal business details with anyone.</p>
 </div>
 
+<!-- WALLET PANEL -->
+<div class="task-panel" id="walletPanel" style="background:linear-gradient(135deg,#fff8e1,#e8f5e9);border-left:4px solid #4caf50;">
+  <h3 style="display:flex;justify-content:space-between;align-items:center;">
+    🪙 My Coin Wallet
+    <span id="walletBalance" style="font-size:1.4rem;color:#2e7d32;">—</span>
+  </h3>
+  <p class="task-note" id="walletHint">Loading wallet...</p>
+  <div id="walletSummary" style="display:flex;gap:16px;margin-top:12px;font-size:0.82rem;">
+    <span>📈 Lifetime earned: <strong id="walletEarned">—</strong></span>
+    <span>📉 Lifetime redeemed: <strong id="walletRedeemed">—</strong></span>
+  </div>
+  <details style="margin-top:12px;">
+    <summary style="cursor:pointer;font-size:0.85rem;color:var(--brown);font-weight:600;">📋 Transaction history</summary>
+    <div id="walletTxns" style="max-height:200px;overflow-y:auto;margin-top:8px;"></div>
+  </details>
+  <div style="margin-top:16px;border-top:1px solid #ddd;padding-top:12px;">
+    <h4 style="margin-bottom:8px;">💰 Redeem Coins</h4>
+    <div class="row">
+      <div class="form-group">
+        <label>Amount (coins = ₹)</label>
+        <input type="number" id="redeemAmount" min="1" placeholder="e.g. 50" style="max-width:120px;">
+      </div>
+      <div class="form-group">
+        <label>Method</label>
+        <select id="redeemMethod">
+          <option value="shopify_discount">Shopify Discount Code</option>
+          <option value="cash">Cash (UPI/Bank)</option>
+          <option value="product_purchase">Buy Product from Store</option>
+        </select>
+      </div>
+    </div>
+    <button class="btn" id="redeemBtn" style="background:#2e7d32;margin-top:8px;" onclick="redeemCoins()">Redeem Now →</button>
+    <div id="redeemResult" style="display:none;margin-top:12px;padding:12px;border-radius:8px;"></div>
+  </div>
+  <p class="task-note" style="margin-top:12px;">💡 Earn 10 coins per product submission, 5 per mistake report, 3 per photo, 2 per print completion. 1 coin = ₹1.</p>
+</div>
+
+<!-- ASSIGNED PRODUCTS PANEL -->
+<div class="task-panel" id="assignmentsPanel" style="background:#e8f4fd;border-left:4px solid #1976d2;">
+  <h3 style="display:flex;justify-content:space-between;align-items:center;">
+    📦 Products Assigned to You
+    <span id="assignmentCount" style="font-size:0.9rem;color:#1976d2;font-weight:600;">—</span>
+  </h3>
+  <p class="task-note">The executive team has assigned these products for you to add. Click the model link to download, then fill the form below.</p>
+  <div id="assignmentList" style="margin-top:12px;">Loading assignments...</div>
+</div>
+
 <form id="intake-form" enctype="multipart/form-data">
 <fieldset class="fieldset">
 <legend>Product Details</legend>
 <div class="form-group">
 <label>Product Name <span class="required">*</span></label>
 <input type="text" name="product_name" required placeholder="e.g. Ganesha Idol 12cm">
+</div>
+<div class="form-group">
+<label>Brand <span class="required">*</span></label>
+<input type="text" name="brand" required placeholder="e.g. FOFUS" value="FOFUS">
 </div>
 <div class="row">
 <div class="form-group">
@@ -136,16 +187,95 @@ input[type=file] { padding:8px; border:1px dashed #ccc; background:#fafafa; }
 <label>Keywords / Tags</label>
 <input type="text" name="keywords" placeholder="e.g. ganesh idol, devotional, ganapati">
 </div>
+
+<fieldset class="fieldset" style="margin-top:12px;">
+<legend>Product Specifications</legend>
 <div class="row">
 <div class="form-group">
-<label>Price (₹) <span class="required">*</span></label>
+<label>Length (mm)</label>
+<input type="number" name="length_mm" min="1" step="0.1" placeholder="e.g. 120">
+</div>
+<div class="form-group">
+<label>Width (mm)</label>
+<input type="number" name="width_mm" min="1" step="0.1" placeholder="e.g. 80">
+</div>
+</div>
+<div class="row">
+<div class="form-group">
+<label>Height (mm)</label>
+<input type="number" name="height_mm" min="1" step="0.1" placeholder="e.g. 150">
+</div>
+<div class="form-group">
+<label>Weight (grams)</label>
+<input type="number" name="weight_g" min="1" step="0.1" placeholder="e.g. 45">
+</div>
+</div>
+<div class="row">
+<div class="form-group">
+<label>Color / Finish</label>
+<select name="color_finish">
+<option value="">Select...</option>
+<option value="White Matte">White Matte</option>
+<option value="White Glossy">White Glossy</option>
+<option value="Black Matte">Black Matte</option>
+<option value="Black Glossy">Black Glossy</option>
+<option value="Gold">Gold</option>
+<option value="Silver">Silver</option>
+<option value="Bronze">Bronze</option>
+<option value="Wood Look">Wood Look</option>
+<option value="Multi-color">Multi-color (AMS)</option>
+<option value="Custom Color">Custom Color (on request)</option>
+<option value="Natural PLA">Natural PLA</option>
+</select>
+</div>
+<div class="form-group">
+<label>Print Resolution (mm layer)</label>
+<select name="layer_height">
+<option value="">Select...</option>
+<option value="0.08">0.08mm (Ultra Fine)</option>
+<option value="0.12">0.12mm (Fine)</option>
+<option value="0.16">0.16mm (Standard)</option>
+<option value="0.20">0.20mm (Draft)</option>
+<option value="0.24">0.24mm (Fast)</option>
+</select>
+</div>
+</div>
+<div class="row">
+<div class="form-group">
+<label>Min Print Time (hours)</label>
+<input type="number" name="print_time_hours" min="0.5" step="0.5" placeholder="4.5">
+</div>
+<div class="form-group">
+<label>Print Difficulty (1-5)</label>
+<select name="print_difficulty">
+<option value="">Select...</option>
+<option value="1">1 — Easy (no supports)</option>
+<option value="2">2 — Simple (minimal supports)</option>
+<option value="3">3 — Moderate (some supports)</option>
+<option value="4">4 — Hard (needs supports)</option>
+<option value="5">5 — Expert (complex, AMS)</option>
+</select>
+</div>
+</div>
+<div class="row">
+<div class="form-group">
+<label>MRP Price (₹) <span class="required">*</span></label>
 <input type="number" name="price_inr" required min="80" step="1" placeholder="999">
 </div>
 <div class="form-group">
-<label>Print Time (hours)</label>
-<input type="number" name="print_time_hours" min="0.5" step="0.5" placeholder="4.5">
+<label>Selling Price (₹)</label>
+<input type="number" name="sale_price_inr" min="0" step="1" placeholder="799">
 </div>
 </div>
+<div class="form-group">
+<label>GTIN / Barcode (if any)</label>
+<input type="text" name="gtin" placeholder="e.g. 8901234567890">
+</div>
+<div class="form-group">
+<label>Customization Options</label>
+<textarea name="customization" rows="2" placeholder="e.g. Name engraving, color choice, size options"></textarea>
+</div>
+</fieldset>
 </fieldset>
 
 <fieldset class="fieldset">
@@ -274,6 +404,8 @@ function showIntake() {
     document.getElementById('intakeScreen').style.display = 'block';
     // Show mistake form when logged in
     document.getElementById('mistake-form').style.display = 'block';
+    // Load wallet
+    loadWallet();
 }
 
 async function doLogin() {
@@ -340,7 +472,13 @@ document.getElementById('intake-form').addEventListener('submit', async (e) => {
         if (resp.ok) {
             document.getElementById('intake-form').style.display = 'none';
             document.getElementById('success').style.display = 'block';
-            document.getElementById('success-detail').textContent = `"${result.id}" added to queue.`;
+            let detail = `"${result.id}" added to queue.`;
+            if (result.coins_earned && result.coins_earned > 0) {
+                detail += ` 🪙 You earned ${result.coins_earned} coins!`;
+            }
+            document.getElementById('success-detail').textContent = detail;
+            // Reload wallet to show new balance
+            loadWallet();
         } else {
             let errMsg = 'Submission failed';
             if (result.detail) {
@@ -393,6 +531,109 @@ function resetMistakeForm() {
     document.getElementById('mistake-form').reset();
     document.getElementById('mistake-form').style.display = 'block';
     document.getElementById('mistakeSuccess').style.display = 'none';
+}
+
+// ── Wallet functions ──
+async function loadWallet() {
+    try {
+        const resp = await fetch(`${API}/api/v1/wallet/balance`, {
+            headers: {'Authorization': `Bearer ${authToken}`}
+        });
+        if (!resp.ok) {
+            document.getElementById('walletHint').textContent = 'Wallet not available';
+            return;
+        }
+        const wallet = await resp.json();
+        document.getElementById('walletBalance').textContent = `🪙 ${wallet.balance}`;
+        document.getElementById('walletEarned').textContent = `${wallet.lifetime_earned} coins`;
+        document.getElementById('walletRedeemed').textContent = `${wallet.lifetime_redeemed} coins`;
+        document.getElementById('walletHint').textContent = `${wallet.balance} coins available (1 coin = ₹1)`;
+
+        // Load transactions
+        const txnResp = await fetch(`${API}/api/v1/wallet/transactions?limit=20`, {
+            headers: {'Authorization': `Bearer ${authToken}`}
+        });
+        if (txnResp.ok) {
+            const txns = await txnResp.json();
+            const txnDiv = document.getElementById('walletTxns');
+            if (txns.length === 0) {
+                txnDiv.innerHTML = '<p style="font-size:0.8rem;color:#888;">No transactions yet.</p>';
+            } else {
+                txnDiv.innerHTML = txns.map(t => {
+                    const color = t.amount > 0 ? '#2e7d32' : '#d32f2f';
+                    const sign = t.amount > 0 ? '+' : '';
+                    const reasonLabel = {
+                        'product_submission': 'Product submitted',
+                        'mistake_report': 'Mistake reported',
+                        'photo_submission': 'Photo submitted',
+                        'print_completion': 'Print completed',
+                        'bonus_quality': 'Quality bonus',
+                        'bonus_speed': 'Speed bonus',
+                        'cash': 'Cash payout',
+                        'shopify_discount': 'Shopify discount',
+                        'product_purchase': 'Product purchase',
+                    }[t.reason] || t.reason;
+                    const date = new Date(t.created_at).toLocaleDateString('en-IN', {day:'numeric',month:'short',hour:'2-digit',minute:'2-digit'});
+                    return `<div style="display:flex;justify-content:space-between;padding:6px 0;border-bottom:1px solid #eee;font-size:0.82rem;">
+                        <span>${reasonLabel}<br><span style="color:#aaa;font-size:0.7rem;">${date}</span></span>
+                        <span style="color:${color};font-weight:600;">${sign}${t.amount} 🪙</span>
+                    </div>`;
+                }).join('');
+            }
+        }
+    } catch (err) {
+        document.getElementById('walletHint').textContent = 'Could not load wallet: ' + err.message;
+    }
+}
+
+async function redeemCoins() {
+    const amount = parseInt(document.getElementById('redeemAmount').value);
+    const method = document.getElementById('redeemMethod').value;
+    if (!amount || amount < 1) {
+        alert('Enter a valid amount');
+        return;
+    }
+    if (!confirm(`Redeem ${amount} coins (₹${amount}) via ${method}?\n\nThis cannot be undone.`)) return;
+
+    const btn = document.getElementById('redeemBtn');
+    btn.disabled = true;
+    btn.textContent = 'Processing...';
+
+    try {
+        const resp = await fetch(`${API}/api/v1/wallet/redeem`, {
+            method: 'POST',
+            headers: {
+                'Authorization': `Bearer ${authToken}`,
+                'Content-Type': 'application/json',
+            },
+            body: JSON.stringify({amount, method}),
+        });
+        const result = await resp.json();
+        const resultDiv = document.getElementById('redeemResult');
+        resultDiv.style.display = 'block';
+
+        if (resp.ok) {
+            resultDiv.style.background = '#e8f5e9';
+            resultDiv.style.border = '1px solid #4caf50';
+            resultDiv.style.color = '#2e7d32';
+            let msg = `✅ Redeemed ${amount} coins successfully!\nRemaining balance: ${result.remaining_balance} coins`;
+            if (result.redeem_code) {
+                msg += `\n\nShopify discount code: ${result.redeem_code}`;
+            }
+            resultDiv.innerHTML = msg.replace(/\n/g, '<br>') + `<br><span style="font-size:0.8rem;">${result.message}</span>`;
+            // Reload wallet
+            loadWallet();
+        } else {
+            resultDiv.style.background = '#ffebee';
+            resultDiv.style.border = '1px solid #ef5350';
+            resultDiv.style.color = '#c62828';
+            resultDiv.textContent = '❌ ' + (result.detail || 'Redemption failed');
+        }
+    } catch (err) {
+        alert('Network error: ' + err.message);
+    }
+    btn.disabled = false;
+    btn.textContent = 'Redeem Now →';
 }
 </script>
 </body>

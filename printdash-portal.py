@@ -96,6 +96,6 @@ class PortalHandler(http.server.BaseHTTPRequestHandler):
         pass  # Quiet
 
 if __name__ == '__main__':
-    server = http.server.HTTPServer(('0.0.0.0', PORT), PortalHandler)
-    print(f'PrintDash Portal running on :{PORT}')
+    server = http.server.HTTPServer(('127.0.0.1', PORT), PortalHandler)
+    print(f'PrintDash Portal running on 127.0.0.1:{PORT}')
     server.serve_forever()

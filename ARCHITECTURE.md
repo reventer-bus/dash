@@ -3,6 +3,7 @@
 > Describes what is built, how it connects, and what each component does.
 > Update this file when a service is added, moved, or replaced.
 > GNI Labs LLP · GST 32ABBFG541K1ZM · Irinjalakuda, Thrissur, Kerala
+> **Scope lock (Jul 21, 2026):** Bambuddy is the canonical printer dashboard, print management, and filament management layer. No duplicate build in PrintDash. Strategic pivot: Google Shopping product visibility.
 
 ---
 
@@ -89,7 +90,8 @@ dash/
 | File storage | Cloudflare R2 | `fofus-gcode` bucket | ✅ Live |
 | WhatsApp automation | AiSensy | `aisensy.com` | ✅ Live |
 || Customer portal | Vercel | `fofus.in` / `customer.fofus.in` | 🟡 Partial (Shopify catalog + SEO sitemap/robots) |
-| Admin panel | Vercel | `business.fofus.in` | 🔲 Not built |
+|| Google Shopping feed | Shopify → Google Merchant Center | `merchants.google.com` | 🟡 Channel connected; verification + product visibility pending |
+|| Admin panel | Vercel | `business.fofus.in` | 🔲 Not built |
 | Customer tracking | Vercel | `track.fofus.in` | 🔲 Not built |
 | Database | PostgreSQL | Railway or Ubuntu Docker | ⚠️ Needed |
 | Mesh VPN | Tailscale | `fofus-mesh` tailnet | 🔲 Set up for backend; Pi nodes TBD |
@@ -110,7 +112,9 @@ dash/
 | FOFUS CEO (agni-ceo) | **Hermes OS** | `~/hermes-os/fofus/ceo/` / `~/fofus/ops/ceo_dashboard.py` | ✅ Resident in Hermes OS, **not Railway** |
 | FOFUS Worker Portal | Railway (PrintDash backend) | `https://print.business.fofus.in/intake` | ✅ Live (Jul 21, intake verified end-to-end) |
 
-### Bambuddy/FOFUS Integration (Jul 18, rebranded Jul 20)
+### Bambuddy/FOFUS Integration (Jul 18, rebranded Jul 20) — SCOPE LOCK (Jul 21)
+
+**Owner directive:** Bambuddy is the single source of truth for printer dashboard, print management, and filament management. PrintDash will not duplicate these features; it integrates with Bambuddy via the bridge and API.
 
 ```
 FOFUS Stack:
@@ -118,16 +122,19 @@ FOFUS Stack:
   Backend (4322) → FastAPI, Shopify webhooks, order pipeline
   Bambuddy/FOFUS (8000) → Docker, printer control, filament, maintenance, notifications
 
-Bambuddy Activated Features:
-  ├── Filament catalog (9 defaults: PLA, PETG, ABS, ASA, TPU — ₹/kg pricing)
-  ├── Maintenance schedules (9 types × 2 printers: belts, rods, nozzle, PTFE, lubrication)
-  ├── Telegram notifications (print start/complete/fail, maintenance, filament alerts)
-  ├── Obico AI monitoring (medium sensitivity, notify action)
-  ├── Local backup (daily 03:00, retention 7 days)
-  ├── GitHub backup (daily, reventer-bus/bambuddy-backup, tested OK)
-  ├── Projects (4: Custom Prints, Product Line, Scanning, Prototyping)
-  ├── Settings: INR currency, ₹8/kWh energy cost, low-stock alerts
-  └── Printers: AGNI-01 (ID 1), AGNI-02 (ID 2) — AGNI-03/04 pending (offline)
+Bambuddy Activated Features (canonical owner):
+  ├── Printer dashboard — live status, queue, controls, history (no PrintDash equivalent)
+  ├── Print management — job dispatch, progress, failure handling, reporting
+  ├── Filament catalog — 9 defaults (PLA, PETG, ABS, ASA, TPU) with ₹/kg pricing
+  ├── Filament inventory — stock levels, low-stock alerts, usage tracking
+  ├── Maintenance schedules — 9 types × 2 printers (belts, rods, nozzle, PTFE, lubrication)
+  ├── Telegram notifications — print start/complete/fail, maintenance, filament alerts
+  ├── Obico AI monitoring — medium sensitivity, notify action
+  ├── Local backup — daily 03:00, retention 7 days
+  ├── GitHub backup — daily, reventer-bus/bambuddy-backup, tested OK
+  ├── Projects — 4: Custom Prints, Product Line, Scanning, Prototyping
+  ├── Settings — INR currency, ₹8/kWh energy cost, low-stock alerts
+  └── Printers — AGNI-01 (ID 1), AGNI-02 (ID 2); AGNI-03/04 pending (offline)
 
 Franchise Architecture (Phase 4, Jul 18):
   PrintDash:
@@ -154,6 +161,27 @@ FOFUS Quote → PrintDash Bridge (Jul 20):
   → PrintDash manages payment flow (NEW → AI_PREP → PRINTING)
   → printdash-bambuddy-bridge.py dispatches to Bambuddy printers
   Env: PRINTDASH_BASE on fofus-quote service → printdash-production.up.railway.app
+```
+
+### Google Shopping / Product Discoverability (Jul 21 — primary marketing focus)
+
+```
+FOFUS products must surface when customers search on Google. Current path:
+  Shopify store.fofus.in products  →  Google & YouTube sales channel  →  Google Merchant Center feed
+  →  Google Search / Shopping tab results
+
+Owned components:
+  ├── Shopify product feed — source of truth for titles, descriptions, images, SKUs, prices
+  ├── JSON-LD structured data — Product schema on product pages (via Next.js customer portal)
+  ├── Blog/SEO content — long-tail Kerala + devotional keywords pointing at product pages
+  └── Google Merchant Center — feed health, disapprovals, shipping/tax/policy compliance
+
+Next items (see PLAN.md):
+  • Verify GMC feed sync status and fix disapprovals
+  • Confirm Shopping tab shows FOFUS for target queries
+  • Expand feed to more FOFUS SKUs (idols, custom prints, candle kits, scanning)
+  • Make every Shopping SKU link to an SEO-optimized landing page
+  • Prepare account for paid Google Shopping campaigns
 ```
 
 ### Backend Hosting (Ubuntu + Tailscale Funnel)
@@ -413,7 +441,10 @@ Partner uploads photo → POST /api/v1/farm/orders/{id}/photos (multipart)
 
 ```
 1. Worker fills form at https://reventer-...ts.net/intake
-   (product name, category, description, price, 3MF/STL file, optional photos)
+   (product name, brand, category, description, keywords, price, sale price,
+    3D model file, optional photos,
+    specifications: length/width/height mm, weight g, color/finish, layer height,
+    print difficulty, GTIN, customization options)
 2. POST /api/v1/products/intake → saves files to data/intake/{timestamp}/
 3. metadata.json written with all form fields + file paths
 4. Farm queue item created as NEW (awaiting owner review)

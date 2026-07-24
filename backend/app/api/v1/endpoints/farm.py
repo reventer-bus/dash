@@ -27,6 +27,85 @@ from app.models.user import User, UserRole
 router = APIRouter()
 
 
+# ── Telegram technician notification ──────────────────────────────────────────
+
+import os
+import json
+import urllib.request
+import urllib.parse
+
+
+def _load_technician_creds():
+    """Read Telegram bot token + chat from env or the printtechnician profile."""
+    token = os.environ.get("TELEGRAM_BOT_TOKEN")
+    chat = os.environ.get("TELEGRAM_HOME_CHANNEL") or os.environ.get("TELEGRAM_ALLOWED_USERS")
+
+    if not token or not chat:
+        profile_env = Path("/home/reventer/.hermes/profiles/printtechnician/.env")
+        if profile_env.exists():
+            try:
+                for line in profile_env.read_text().splitlines():
+                    line = line.strip()
+                    if not line or line.startswith("#") or "=" not in line:
+                        continue
+                    key, value = line.split("=", 1)
+                    value = value.strip().strip('"').strip("'")
+                    if key == "TELEGRAM_BOT_TOKEN" and not token:
+                        token = value
+                    if key == "TELEGRAM_HOME_CHANNEL" and not chat:
+                        chat = value
+                    if key == "TELEGRAM_ALLOWED_USERS" and not chat:
+                        chat = value
+            except Exception:
+                pass
+    return token, chat
+
+
+async def _notify_technician_completion(order: dict, status: str):
+    """Send a short completion alert to the FOFUS technician Telegram bot."""
+    token, chat_id = _load_technician_creds()
+    if not token or not chat_id:
+        return
+
+    order_id = order.get("id", "unknown")
+    name = order.get("name") or order.get("shopify_order_number") or order.get("shopify_order_id") or order_id
+    material = order.get("material", "-")
+    qty = order.get("qty", 1)
+    printer = order.get("assigned_printer") or order.get("printer_id") or "-"
+    partner = order.get("assigned_partner") or "FOFUS"
+
+    action = "ready for dispatch" if status == "DISPATCH" else "print completed"
+    text = (
+        f"FOFUS PrintDash\n"
+        f"Order {action}\n\n"
+        f"Order: {name}\n"
+        f"ID: {order_id}\n"
+        f"Material: {material} x{qty}\n"
+        f"Printer: {printer}\n"
+        f"Partner: {partner}"
+    )
+
+    data = urllib.parse.urlencode({
+        "chat_id": chat_id,
+        "text": text,
+        "parse_mode": "HTML",
+    }).encode()
+
+    try:
+        req = urllib.request.Request(
+            f"https://api.telegram.org/bot{token}/sendMessage",
+            data=data,
+            headers={"Content-Type": "application/x-www-form-urlencoded"},
+            method="POST",
+        )
+        with urllib.request.urlopen(req, timeout=15) as resp:
+            result = json.loads(resp.read())
+            if not result.get("ok"):
+                print(f"Telegram notify failed: {result}")
+    except Exception as exc:
+        print(f"Telegram notify exception: {exc}")
+
+
 # ── Access helpers ────────────────────────────────────────────────────────────
 
 def _partner_scope(user: Optional[User]) -> Optional[str]:
@@ -161,12 +240,15 @@ async def update_order(
     # Auto-trigger Shopify push on DONE / DISPATCH for Shopify orders.
     # Dry-runs are safe (no HTTP call when SHOPIFY_ADMIN_TOKEN unset).
     new_status = updates.get("status")
-    if new_status in ("DONE", "DISPATCH") and result.get("shopify_order_id"):
-        from app.services import shopify_pusher
-        push_record = await shopify_pusher.auto_push_if_needed(result, new_status)
-        if push_record:
-            result.setdefault("history", []).append(push_record)
-            await farm_store.save_order(result)
+    if new_status in ("DONE", "DISPATCH"):
+        # Notify technician bot on print completion / dispatch
+        await _notify_technician_completion(result, new_status)
+        if result.get("shopify_order_id"):
+            from app.services import shopify_pusher
+            push_record = await shopify_pusher.auto_push_if_needed(result, new_status)
+            if push_record:
+                result.setdefault("history", []).append(push_record)
+                await farm_store.save_order(result)
     return result
 
 

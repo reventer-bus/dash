@@ -52,7 +52,7 @@ else
     fi
 fi
 
-# 3. Tailscale Funnel DISABLED — was publicly exposing unauthenticated dash
+# 3. Tailscale public exposure DISABLED — was exposing unauthenticated dash (removed Jul 24)
 #    Public access is now via designai.fofus.in (Railway) with AUTH_ENFORCE=true
 echo ""
 if tailscale status >/dev/null 2>&1; then

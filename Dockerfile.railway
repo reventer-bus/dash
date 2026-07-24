@@ -9,6 +9,9 @@ RUN npm ci
 COPY frontend/ ./
 ARG VITE_API_URL=""
 ENV VITE_API_URL=$VITE_API_URL
+# Cache bust: force rebuild of source layer
+ARG BUILD_DATE=unknown
+ENV BUILD_DATE=$BUILD_DATE
 RUN npm run build
 
 # ── Stage 2: Build backend ────────────────────────────────────────────────────
